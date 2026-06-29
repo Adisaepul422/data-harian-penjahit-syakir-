@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistem Produksi Harian</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --brand:       #1a56db;
+    --brand-dark:  #1341a8;
+    --brand-light: #e8f0fe;
+    --accent:      #f59e0b;
+    --success:     #10b981;
+    --danger:      #ef4444;
+    --bg:          #f0f4f8;
+    --card:        #ffffff;
+    --border:      #e2e8f0;
+    --text:        #1e293b;
+    --muted:       #64748b;
+    --radius:      12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── PAGES ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── LOGIN ── */
+  #page-login {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #1a56db 0%, #1341a8 50%, #0f2f7a 100%);
+  }
+  #page-login.active { display: flex; }
+
+  .login-card {
+    background: white;
+    border-radius: 20px;
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+  }
+  .login-logo {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .login-logo .icon {
+    width: 64px; height: 64px;
+    background: var(--brand-light);
+    border-radius: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+  .login-logo h1 { font-size: 22px; font-weight: 700; color: var(--text); }
+  .login-logo p  { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  .form-group { margin-bottom: 18px; }
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color .2s;
+    color: var(--text);
+    background: white;
+  }
+  .form-group input:focus, .form-group select:focus {
+    outline: none;
+    border-color: var(--brand);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-primary {
+    background: var(--brand);
+    color: white;
+    width: 100%;
+  }
+  .btn-primary:hover { background: var(--brand-dark); transform: translateY(-1px); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-success:hover { filter: brightness(1.1); }
+  .btn-danger  { background: var(--danger); color: white; }
+  .btn-danger:hover  { filter: brightness(1.1); }
+  .btn-outline {
+    background: transparent;
+    border: 2px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-outline:hover { border-color: var(--brand); color: var(--brand); }
+  .btn-accent { background: var(--accent); color: white; }
+  .btn-accent:hover { filter: brightness(1.1); }
+
+  .login-err {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: none;
+  }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    background: var(--brand);
+    color: white;
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .topbar-left h2 { font-size: 16px; font-weight: 600; }
+  .topbar-badge {
+    background: rgba(255,255,255,0.2);
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+  .topbar-date { font-size: 12px; opacity: .75; }
+  .btn-logout {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .btn-logout:hover { background: rgba(255,255,255,0.25); }
+
+  /* ── PRODUKSI PAGE ── */
+  .main-wrap {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 24px 16px;
+  }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--brand);
+  }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media(max-width:500px){ .form-row { grid-template-columns: 1fr; } }
+
+  .form-group select option { color: var(--text); }
+
+  /* ── SUMMARY STRIP ── */
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .strip-box {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+  .strip-box .num {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--brand);
+  }
+  .strip-box .lbl {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ── TABLE ── */
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    background: var(--brand-light);
+    color: var(--brand);
+    font-weight: 700;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: #f8faff; }
+  tbody td { padding: 10px 12px; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-color {
+    background: var(--brand-light);
+    color: var(--brand);
+  }
+  .badge-qty {
+    background: #ecfdf5;
+    color: var(--success);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+  }
+  .empty-state .icon { font-size: 40px; margin-bottom: 10px; }
+  .empty-state p { font-size: 14px; }
+
+  /* ── ADMIN PAGE ── */
+  .admin-wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 24px 16px;
+  }
+
+  .filter-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    align-items: flex-end;
+  }
+  .filter-row .form-group { margin-bottom: 0; flex: 1; min-width: 140px; }
+
+  .export-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .admin-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media(max-width:600px){ .admin-stats { grid-template-columns: repeat(2,1fr); } }
+  .stat-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 16px;
+    border: 1px solid var(--border);
+  }
+  .stat-card .s-num {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--brand);
+  }
+  .stat-card .s-lbl {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: background .15s;
+  }
+  .action-btn:hover { background: #fee2e2; }
+
+  /* ── PREVIEW LIST ── */
+  .preview-list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .preview-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--brand-light);
+    border: 1px solid #c7d9fb;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    gap: 8px;
+  }
+  .preview-item .pi-info { flex: 1; }
+  .preview-item .pi-name { font-weight: 700; color: var(--brand); }
+  .preview-item .pi-detail { color: var(--muted); margin-top: 2px; font-size: 12px; }
+  .preview-item .pi-del {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    color: var(--danger);
+    transition: background .15s;
+  }
+  .preview-item .pi-del:hover { background: #fee2e2; }
+  .preview-empty {
+    text-align: center;
+    padding: 16px;
+    color: var(--muted);
+    font-size: 13px;
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    margin-top: 12px;
+  }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .btn-add {
+    background: var(--brand-light);
+    color: var(--brand);
+    border: 2px solid var(--brand);
+  }
+  .btn-add:hover { background: var(--brand); color: white; }
+
+  /* toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--text);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all .3s;
+    z-index: 999;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { background: var(--success); }
+  .toast.danger  { background: var(--danger); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════
+     PAGE: LOGIN
+════════════════════════════════════ -->
+<div id="page-login" class="page active">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="icon">🏭</div>
+      <h1>Sistem Produksi</h1>
+      <p>Manajemen Data Harian Pekerja</p>
+    </div>
+    <div class="login-err" id="login-err">Username atau password salah.</div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="inp-user" placeholder="Masukkan username..." autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="inp-pass" placeholder="Masukkan password...">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">🔐 Masuk</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE: PRODUKSI
+════════════════════════════════════ -->
+<div id="page-produksi" class="page">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h2>🏭 Produksi Harian</h2>
+      <span class="topbar-badge">Tim Produksi</span>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-date" id="prod-date"></span>
+      <button class="btn-logout" onclick="doLogout()">Keluar</button>
+    </div>
+  </div>
+
+  <div class="main-wrap">
+    <!-- Summary -->
+    <div class="summary-strip">
+      <div class="strip-box">
+        <div class="num" id="sum-entries">0</div>
+        <div class="lbl">Total Input Hari Ini</div>
+      </div>
+      <div class="strip-box">
+        <div class="num" id="sum-lusin">0</div>
+        <div class="lbl">Total Lusin Hari Ini</div>
+      </div>
+      <div class="strip-box">
+        <div class="num" id="sum-barang">0</div>
+        <div class="lbl">Jenis Barang</div>
+      </div>
+    </div>
+
+    <!-- Form Input -->
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Input Data Produksi</div>
+      <div class="form-group">
+        <label>Nama Pekerja</label>
+        <input type="text" id="inp-nama" placeholder="Nama lengkap pekerja...">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nama Barang</label>
+          <select id="inp-barang" onchange="loadWarna()">
+            <option value="">-- Pilih Barang --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Warna</label>
+          <select id="inp-warna">
+            <option value="">-- Pilih Warna --</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Jumlah (Lusin)</label>
+        <input type="number" id="inp-jumlah" placeholder="0" min="1">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-add" onclick="tambahKePreview()">➕ Tambah</button>
+      </div>
+
+      <!-- Preview List -->
+      <div id="preview-section" style="margin-top:20px; display:none;">
+        <div class="card-title" style="margin-bottom:10px;"><span class="dot" style="background:var(--accent)"></span>Preview — Belum Disimpan</div>
+        <div id="preview-list" class="preview-list"></div>
+        <div class="btn-row" style="margin-top:16px;">
+          <button class="btn btn-primary" onclick="simpanSemua()">✅ Simpan Semua</button>
+          <button class="btn btn-danger" onclick="batalSemua()">🗑️ Batal Semua</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- List Data Hari Ini -->
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Data Hari Ini</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Nama Pekerja</th>
+              <th>Barang</th>
+              <th>Warna</th>
+              <th>Jumlah</th>
+              <th>Waktu</th>
+            </tr>
+          </thead>
+          <tbody id="prod-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="prod-empty">
+        <div class="icon">📦</div>
+        <p>Belum ada data produksi hari ini.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE: ADMIN
+════════════════════════════════════ -->
+<div id="page-admin" class="page">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h2>📊 Admin Dashboard</h2>
+      <span class="topbar-badge" style="background:rgba(245,158,11,0.3);">Admin</span>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-date" id="admin-date"></span>
+      <button class="btn-logout" onclick="doLogout()">Keluar</button>
+    </div>
+  </div>
+
+  <div class="admin-wrap">
+    <!-- Stats -->
+    <div class="admin-stats">
+      <div class="stat-card">
+        <div class="s-num" id="a-total">0</div>
+        <div class="s-lbl">Total Semua Input</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-num" id="a-lusin">0</div>
+        <div class="s-lbl">Total Lusin</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-num" id="a-hari">0</div>
+        <div class="s-lbl">Data Hari Ini</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-num" id="a-pekerja">0</div>
+        <div class="s-lbl">Nama Pekerja Unik</div>
+      </div>
+    </div>
+
+    <!-- Filter & Export -->
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Filter Data</div>
+      <div class="filter-row">
+        <div class="form-group">
+          <label>Tanggal</label>
+          <input type="date" id="f-tanggal">
+        </div>
+        <div class="form-group">
+          <label>Nama Pekerja</label>
+          <input type="text" id="f-pekerja" placeholder="Cari nama...">
+        </div>
+        <div class="form-group">
+          <label>Barang</label>
+          <select id="f-barang">
+            <option value="">Semua Barang</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="height:42px;margin-top:auto" onclick="renderAdminTable()">🔍 Filter</button>
+        <button class="btn btn-outline" style="height:42px;margin-top:auto" onclick="resetFilter()">↺ Reset</button>
+      </div>
+      <div class="export-row">
+        <button class="btn btn-accent" onclick="exportExcel()">📥 Export Excel</button>
+        <button class="btn btn-danger" onclick="hapusSemuaData()">🗑️ Hapus Semua Data</button>
+      </div>
+    </div>
+
+    <!-- Table Admin -->
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Semua Data Produksi</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Tanggal</th>
+              <th>Waktu</th>
+              <th>Nama Pekerja</th>
+              <th>Barang</th>
+              <th>Warna</th>
+              <th>Jumlah (Lusin)</th>
+              <th>Hapus</th>
+            </tr>
+          </thead>
+          <tbody id="admin-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="admin-empty">
+        <div class="icon">📭</div>
+        <p>Belum ada data yang tersedia.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════════════════════════════
+   DATA BARANG & WARNA
+═══════════════════════════════ */
+const BARANG = [
+  { nama: "Arliwi",         warna: ["Hitam","Merah","Coklat","Biru"] },
+  { nama: "Sikamaru",       warna: ["Hitam","Coklat","Merah"] },
+  { nama: "Hinata",         warna: ["Hitam","Coklat","Merah","Putih","Pink"] },
+  { nama: "Arsha",          warna: ["Merah","Coklat","Hitam"] },
+  { nama: "Famela",         warna: ["Coklat","Biru"] },
+  { nama: "Melody",         warna: ["—"] },
+  { nama: "Leora",          warna: ["Coklat","Biru"] },
+  { nama: "Marlinda",       warna: ["Coklat","Hitam"] },
+  { nama: "Fairi",          warna: ["Coklat","Hitam","Merah"] },
+  { nama: "Dinara",         warna: ["Hitam","Merah","Abu","Pink"] },
+  { nama: "Ananda",         warna: ["Hitam","Coklat","Putih","Abu","Pink"] },
+  { nama: "Azzura",         warna: ["Coklat","Cream"] },
+  { nama: "Revana",         warna: ["Hitam","Mint","Navy","Merah","Putih","Hijau Tua"] },
+  { nama: "Parsya",         warna: ["Merah","Hitam","Navy"] },
+  { nama: "Zaskia",         warna: ["Hitam","Coklat","Navy","Merah"] },
+  { nama: "Ransel Mini",    warna: ["Pink"] },
+  { nama: "Ransel Besar",   warna: ["Pink"] },
+  { nama: "Ransel Mini Pack",warna: ["Pink"] },
+];
+
+/* ═══════════════════════════════
+   AUTH
+═══════════════════════════════ */
+const USERS = {
+  produksi: { pass: "produksi123", role: "produksi" },
+  admin:    { pass: "admin123",    role: "admin" },
+};
+
+let currentRole = null;
+
+function doLogin() {
+  const u = document.getElementById('inp-user').value.trim().toLowerCase();
+  const p = document.getElementById('inp-pass').value.trim();
+  const err = document.getElementById('login-err');
+
+  if (USERS[u] && USERS[u].pass === p) {
+    err.style.display = 'none';
+    currentRole = USERS[u].role;
+    showPage(currentRole === 'admin' ? 'page-admin' : 'page-produksi');
+    currentRole === 'admin' ? initAdmin() : initProduksi();
+  } else {
+    err.style.display = 'block';
+  }
+}
+
+function doLogout() {
+  currentRole = null;
+  document.getElementById('inp-user').value = '';
+  document.getElementById('inp-pass').value = '';
+  showPage('page-login');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('page-login').classList.contains('active')) doLogin();
+});
+
+/* ═══════════════════════════════
+   PAGE NAVIGATION
+═══════════════════════════════ */
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ═══════════════════════════════
+   STORAGE HELPERS
+═══════════════════════════════ */
+function getData() {
+  return JSON.parse(localStorage.getItem('produksi_data') || '[]');
+}
+function saveData(d) {
+  localStorage.setItem('produksi_data', JSON.stringify(d));
+}
+function todayStr() {
+  return new Date().toISOString().slice(0,10);
+}
+function nowStr() {
+  return new Date().toLocaleTimeString('id-ID', {hour:'2-digit',minute:'2-digit'});
+}
+function formatDate(iso) {
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+/* ═══════════════════════════════
+   PRODUKSI INIT
+═══════════════════════════════ */
+function initProduksi() {
+  // Set date
+  const d = new Date();
+  document.getElementById('prod-date').textContent =
+    d.toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  // Populate barang select
+  const sel = document.getElementById('inp-barang');
+  sel.innerHTML = '<option value="">-- Pilih Barang --</option>';
+  BARANG.forEach(b => {
+    const o = document.createElement('option');
+    o.value = b.nama; o.textContent = b.nama;
+    sel.appendChild(o);
+  });
+
+  renderProduksiTable();
+}
+
+function loadWarna() {
+  const barangNama = document.getElementById('inp-barang').value;
+  const warnaEl = document.getElementById('inp-warna');
+  warnaEl.innerHTML = '<option value="">-- Pilih Warna --</option>';
+  if (!barangNama) return;
+  const found = BARANG.find(b => b.nama === barangNama);
+  if (found) {
+    found.warna.forEach(w => {
+      const o = document.createElement('option');
+      o.value = w; o.textContent = w;
+      warnaEl.appendChild(o);
+    });
+  }
+}
+
+// Temporary preview buffer
+let previewBuffer = [];
+
+function tambahKePreview() {
+  const nama   = document.getElementById('inp-nama').value.trim();
+  const barang = document.getElementById('inp-barang').value;
+  const warna  = document.getElementById('inp-warna').value;
+  const jumlah = parseInt(document.getElementById('inp-jumlah').value);
+
+  if (!nama)        return toast('Nama pekerja wajib diisi!', 'danger');
+  if (!barang)      return toast('Pilih nama barang!', 'danger');
+  if (!warna)       return toast('Pilih warna barang!', 'danger');
+  if (!jumlah || jumlah < 1) return toast('Jumlah harus lebih dari 0!', 'danger');
+
+  previewBuffer.push({
+    tempId: Date.now() + Math.random(),
+    nama, barang, warna, jumlah
+  });
+
+  // Reset hanya barang, warna, jumlah — nama tetap (kemungkinan input lagi)
+  document.getElementById('inp-barang').value = '';
+  document.getElementById('inp-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
+  document.getElementById('inp-jumlah').value = '';
+
+  renderPreview();
+  toast('Item ditambahkan ke preview!', 'success');
+}
+
+function renderPreview() {
+  const section = document.getElementById('preview-section');
+  const list    = document.getElementById('preview-list');
+
+  if (previewBuffer.length === 0) {
+    section.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+
+  section.style.display = 'block';
+  list.innerHTML = previewBuffer.map((item, i) => `
+    <div class="preview-item">
+      <div class="pi-info">
+        <div class="pi-name">${item.nama}</div>
+        <div class="pi-detail">${item.barang} · <span class="badge badge-color">${item.warna}</span> · <span class="badge badge-qty">${item.jumlah} Lsn</span></div>
+      </div>
+      <button class="pi-del" onclick="hapusPreview(${i})" title="Hapus item ini">✕</button>
+    </div>
+  `).join('');
+}
+
+function hapusPreview(index) {
+  previewBuffer.splice(index, 1);
+  renderPreview();
+  toast('Item dihapus dari preview.', 'danger');
+}
+
+function simpanSemua() {
+  if (previewBuffer.length === 0) return toast('Tidak ada data di preview!', 'danger');
+
+  const data = getData();
+  const waktu = nowStr();
+  const tanggal = todayStr();
+
+  previewBuffer.forEach(item => {
+    data.push({
+      id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+      tanggal, waktu,
+      nama: item.nama,
+      barang: item.barang,
+      warna: item.warna,
+      jumlah: item.jumlah
+    });
+  });
+
+  saveData(data);
+  previewBuffer = [];
+
+  // Reset semua form
+  document.getElementById('inp-nama').value   = '';
+  document.getElementById('inp-barang').value = '';
+  document.getElementById('inp-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
+  document.getElementById('inp-jumlah').value = '';
+
+  renderPreview();
+  renderProduksiTable();
+  toast('Semua data berhasil disimpan! ✅', 'success');
+}
+
+function batalSemua() {
+  if (!confirm('Batalkan semua item di preview? Data tidak akan disimpan.')) return;
+  previewBuffer = [];
+  renderPreview();
+  toast('Preview dibatalkan.', 'danger');
+}
+
+function renderProduksiTable() {
+  const all   = getData();
+  const today = all.filter(d => d.tanggal === todayStr());
+  const tbody = document.getElementById('prod-tbody');
+  const empty = document.getElementById('prod-empty');
+
+  // Summary
+  document.getElementById('sum-entries').textContent = today.length;
+  document.getElementById('sum-lusin').textContent   = today.reduce((a,b)=>a+b.jumlah,0);
+  const barangUnik = [...new Set(today.map(d=>d.barang))].length;
+  document.getElementById('sum-barang').textContent  = barangUnik;
+
+  if (today.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Show newest first
+  const sorted = [...today].reverse();
+  tbody.innerHTML = sorted.map((d,i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td><strong>${d.nama}</strong></td>
+      <td>${d.barang}</td>
+      <td><span class="badge badge-color">${d.warna}</span></td>
+      <td><span class="badge badge-qty">${d.jumlah} Lsn</span></td>
+      <td>${d.waktu}</td>
+    </tr>
+  `).join('');
+}
+
+/* ═══════════════════════════════
+   ADMIN INIT
+═══════════════════════════════ */
+function initAdmin() {
+  const d = new Date();
+  document.getElementById('admin-date').textContent =
+    d.toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  // Set today as default date filter
+  document.getElementById('f-tanggal').value = todayStr();
+
+  // Populate filter barang
+  const sel = document.getElementById('f-barang');
+  sel.innerHTML = '<option value="">Semua Barang</option>';
+  BARANG.forEach(b => {
+    const o = document.createElement('option');
+    o.value = b.nama; o.textContent = b.nama;
+    sel.appendChild(o);
+  });
+
+  renderAdminTable();
+}
+
+function getFiltered() {
+  let data = getData();
+  const fTgl     = document.getElementById('f-tanggal').value;
+  const fPekerja = document.getElementById('f-pekerja').value.trim().toLowerCase();
+  const fBarang  = document.getElementById('f-barang').value;
+
+  if (fTgl)     data = data.filter(d => d.tanggal === fTgl);
+  if (fPekerja) data = data.filter(d => d.nama.toLowerCase().includes(fPekerja));
+  if (fBarang)  data = data.filter(d => d.barang === fBarang);
+
+  return data;
+}
+
+function renderAdminTable() {
+  const all      = getData();
+  const filtered = getFiltered();
+  const tbody    = document.getElementById('admin-tbody');
+  const empty    = document.getElementById('admin-empty');
+
+  // Stats (all data, not filtered)
+  document.getElementById('a-total').textContent   = all.length;
+  document.getElementById('a-lusin').textContent   = all.reduce((a,b)=>a+b.jumlah,0);
+  document.getElementById('a-hari').textContent    = all.filter(d=>d.tanggal===todayStr()).length;
+  document.getElementById('a-pekerja').textContent = [...new Set(all.map(d=>d.nama))].length;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Simpan index asli di all data (sebelum filter/sort) untuk hapus yang akurat
+  const allData = getData();
+  const sorted = [...filtered].reverse();
+  tbody.innerHTML = sorted.map((d,i) => {
+    const origIndex = allData.findIndex(x => x === d || (String(x.id) === String(d.id)));
+    return `
+    <tr>
+      <td>${i+1}</td>
+      <td>${formatDate(d.tanggal)}</td>
+      <td>${d.waktu}</td>
+      <td><strong>${d.nama}</strong></td>
+      <td>${d.barang}</td>
+      <td><span class="badge badge-color">${d.warna}</span></td>
+      <td><span class="badge badge-qty">${d.jumlah} Lsn</span></td>
+      <td>
+        <button class="action-btn" onclick="hapusRowByIndex(${origIndex})" title="Hapus">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function resetFilter() {
+  document.getElementById('f-tanggal').value = todayStr();
+  document.getElementById('f-pekerja').value = '';
+  document.getElementById('f-barang').value  = '';
+  renderAdminTable();
+}
+
+function hapusRow(id) {
+  if (!confirm('Hapus data ini?')) return;
+  let data = getData();
+  data = data.filter(d => String(d.id) !== String(id));
+  saveData(data);
+  renderAdminTable();
+  toast('Data dihapus.', 'danger');
+}
+
+function hapusRowByIndex(index) {
+  if (!confirm('Hapus data ini?')) return;
+  let data = getData();
+  if (index < 0 || index >= data.length) return toast('Data tidak ditemukan!', 'danger');
+  data.splice(index, 1);
+  saveData(data);
+  renderAdminTable();
+  toast('Data dihapus.', 'danger');
+}
+
+function hapusSemuaData() {
+  if (!confirm('HAPUS SEMUA DATA? Tindakan ini tidak dapat dibatalkan!')) return;
+  saveData([]);
+  renderAdminTable();
+  toast('Semua data telah dihapus.', 'danger');
+}
+
+/* ═══════════════════════════════
+   EXPORT EXCEL (CSV)
+═══════════════════════════════ */
+function exportExcel() {
+  const data = getFiltered();
+  if (data.length === 0) return toast('Tidak ada data untuk diekspor!', 'danger');
+
+  let csv = 'No,Tanggal,Waktu,Nama Pekerja,Barang,Warna,Jumlah (Lusin)\n';
+  [...data].reverse().forEach((d,i) => {
+    csv += `${i+1},${formatDate(d.tanggal)},${d.waktu},"${d.nama}","${d.barang}","${d.warna}",${d.jumlah}\n`;
+  });
+
+  // Add summary row
+  const totalLusin = data.reduce((a,b)=>a+b.jumlah,0);
+  csv += `\nTotal,,,,,,${totalLusin}\n`;
+
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `data-produksi-${todayStr()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('File Excel berhasil diunduh! 📥', 'success');
+}
+
+/* ═══════════════════════════════
+   TOAST
+═══════════════════════════════ */
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = `toast ${type} show`;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+</script>
+</body>
+</html>
