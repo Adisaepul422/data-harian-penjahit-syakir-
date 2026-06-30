@@ -416,6 +416,7 @@
   .toast.success { background: var(--success); }
   .toast.danger  { background: var(--danger); }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -598,7 +599,7 @@
         <button class="btn btn-outline" style="height:42px;margin-top:auto" onclick="resetFilter()">↺ Reset</button>
       </div>
       <div class="export-row">
-        <button class="btn btn-accent" onclick="exportExcel()">📥 Export Excel</button>
+        <button class="btn btn-accent" onclick="exportExcel()">📥 Export ke Spreadsheet (.xlsx)</button>
         <button class="btn btn-danger" onclick="hapusSemuaData()">🗑️ Hapus Semua Data</button>
       </div>
     </div>
@@ -997,29 +998,35 @@ function hapusSemuaData() {
 }
 
 /* ═══════════════════════════════
-   EXPORT EXCEL (CSV)
+   EXPORT EXCEL (.xlsx asli)
 ═══════════════════════════════ */
 function exportExcel() {
   const data = getFiltered();
   if (data.length === 0) return toast('Tidak ada data untuk diekspor!', 'danger');
 
-  let csv = 'No,Tanggal,Waktu,Nama Pekerja,Barang,Warna,Jumlah (Lusin)\n';
-  [...data].reverse().forEach((d,i) => {
-    csv += `${i+1},${formatDate(d.tanggal)},${d.waktu},"${d.nama}","${d.barang}","${d.warna}",${d.jumlah}\n`;
-  });
+  const rows = [...data].reverse().map((d, i) => ({
+    'No': i + 1,
+    'Tanggal': formatDate(d.tanggal),
+    'Waktu': d.waktu,
+    'Nama Pekerja': d.nama,
+    'Barang': d.barang,
+    'Warna': d.warna,
+    'Jumlah (Lusin)': d.jumlah
+  }));
 
-  // Add summary row
-  const totalLusin = data.reduce((a,b)=>a+b.jumlah,0);
-  csv += `\nTotal,,,,,,${totalLusin}\n`;
+  const totalLusin = data.reduce((a, b) => a + b.jumlah, 0);
+  rows.push({ 'No': '', 'Tanggal': '', 'Waktu': '', 'Nama Pekerja': '', 'Barang': '', 'Warna': 'Total', 'Jumlah (Lusin)': totalLusin });
 
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `data-produksi-${todayStr()}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  toast('File Excel berhasil diunduh! 📥', 'success');
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 5 }, { wch: 12 }, { wch: 8 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 14 }
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data Produksi');
+
+  XLSX.writeFile(wb, `data-produksi-${todayStr()}.xlsx`);
+  toast('File Excel (.xlsx) berhasil diunduh! 📥', 'success');
 }
 
 /* ═══════════════════════════════
