@@ -421,6 +421,8 @@
   .toast.danger  { background: var(--danger); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -498,7 +500,7 @@
         <div class="card-title" style="margin-bottom:10px;"><span class="dot" style="background:var(--accent)"></span>Preview — Belum Disimpan</div>
         <div id="preview-list" class="preview-list"></div>
         <div class="btn-row" style="margin-top:16px;">
-          <button class="btn btn-primary" onclick="simpanSemua()">✅ Simpan Semua</button>
+          <button class="btn btn-primary" id="btn-simpan-semua" onclick="simpanSemua()">✅ Simpan Semua</button>
           <button class="btn btn-danger" onclick="batalSemua()">🗑️ Batal Semua</button>
         </div>
       </div>
@@ -602,6 +604,7 @@
       </div>
       <div class="export-row">
         <button class="btn btn-accent" onclick="exportExcel()">📥 Export ke Spreadsheet (.xlsx)</button>
+        <button class="btn btn-outline" onclick="migrasiDataLama()">🔄 Migrasi Data Lama ke Cloud</button>
         <button class="btn btn-danger" onclick="hapusSemuaData()">🗑️ Hapus Semua Data</button>
       </div>
     </div>
@@ -718,7 +721,7 @@
 
 <script>
 /* ═══════════════════════════════
-   DATA BARANG & WARNA (dinamis, tersimpan di localStorage)
+   DATA BARANG & WARNA (dinamis, tersimpan di cloud Firestore)
 ═══════════════════════════════ */
 const BARANG_DEFAULT = [
   { nama: "Arliwi",         warna: ["Hitam","Merah","Coklat","Biru"] },
@@ -741,16 +744,77 @@ const BARANG_DEFAULT = [
   { nama: "Ransel Mini Pack",warna: ["Pink"] },
 ];
 
-function getBarang() {
-  const raw = localStorage.getItem('produksi_barang');
-  if (!raw) {
-    saveBarang(BARANG_DEFAULT);
-    return JSON.parse(JSON.stringify(BARANG_DEFAULT));
+/* ═══════════════════════════════
+   FIREBASE SETUP
+   Ganti seluruh isi objek di bawah ini dengan
+   konfigurasi dari project Firebase Anda sendiri.
+   Lihat panduan yang diberikan bersama file ini.
+═══════════════════════════════ */
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyDTC7injv2Q8JJ-PnYcpCfV8c_-u_9QFcU",
+  authDomain: "data-harian-syaakir.firebaseapp.com",
+  projectId: "data-harian-syaakir",
+  storageBucket: "data-harian-syaakir.firebasestorage.app",
+  messagingSenderId: "679349279012",
+  appId: "1:679349279012:web:1ea8718e6315cf90c83bb1",
+  measurementId: "G-LCXZ3JBB1N"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+// Dengarkan perubahan data produksi secara real-time dari semua device
+db.collection('produksi_data').onSnapshot(snap => {
+  cachedData = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+  onDataChanged();
+}, err => {
+  toast('Gagal terhubung ke database. Cek koneksi internet / konfigurasi Firebase.', 'danger');
+  console.error(err);
+});
+
+// Dengarkan perubahan daftar barang secara real-time
+db.collection('config').doc('barang').onSnapshot(doc => {
+  if (doc.exists) {
+    cachedBarang = doc.data().list || [];
+  } else {
+    db.collection('config').doc('barang').set({ list: BARANG_DEFAULT });
+    cachedBarang = JSON.parse(JSON.stringify(BARANG_DEFAULT));
   }
-  return JSON.parse(raw);
+  onBarangChanged();
+}, err => {
+  console.error(err);
+});
+
+function onDataChanged() {
+  if (document.getElementById('page-admin')?.classList.contains('active')) {
+    renderAdminTable();
+    loadRekapPekerjaSelect();
+  }
+}
+function onBarangChanged() {
+  if (document.getElementById('page-produksi')?.classList.contains('active')) {
+    loadBarangSelect();
+  }
+  if (document.getElementById('page-admin')?.classList.contains('active')) {
+    loadFilterBarangSelect();
+    renderBarangTable();
+  }
+}
+
+function getBarang() {
+  return cachedBarang;
 }
 function saveBarang(list) {
-  localStorage.setItem('produksi_barang', JSON.stringify(list));
+  return db.collection('config').doc('barang').set({ list });
 }
 
 /* ═══════════════════════════════
@@ -801,10 +865,7 @@ function showPage(id) {
    STORAGE HELPERS
 ═══════════════════════════════ */
 function getData() {
-  return JSON.parse(localStorage.getItem('produksi_data') || '[]');
-}
-function saveData(d) {
-  localStorage.setItem('produksi_data', JSON.stringify(d));
+  return cachedData;
 }
 function todayStr() {
   return new Date().toISOString().slice(0,10);
@@ -910,25 +971,34 @@ function hapusPreview(index) {
   toast('Item dihapus dari preview.', 'danger');
 }
 
-function simpanSemua() {
+async function simpanSemua() {
   if (previewBuffer.length === 0) return toast('Tidak ada data di preview!', 'danger');
 
-  const data = getData();
   const waktu = nowStr();
   const tanggal = todayStr();
+  const btn = document.getElementById('btn-simpan-semua');
+  if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
 
-  previewBuffer.forEach(item => {
-    data.push({
-      id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
-      tanggal, waktu,
-      nama: item.nama,
-      barang: item.barang,
-      warna: item.warna,
-      jumlah: item.jumlah
+  try {
+    const batch = db.batch();
+    previewBuffer.forEach(item => {
+      const ref = db.collection('produksi_data').doc();
+      batch.set(ref, {
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        tanggal, waktu,
+        nama: item.nama,
+        barang: item.barang,
+        warna: item.warna,
+        jumlah: item.jumlah
+      });
     });
-  });
+    await batch.commit();
+  } catch (e) {
+    console.error(e);
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Simpan Semua'; }
+    return toast('Gagal menyimpan data. Cek koneksi internet!', 'danger');
+  }
 
-  saveData(data);
   previewBuffer = [];
 
   // Reset semua form
@@ -936,6 +1006,7 @@ function simpanSemua() {
   document.getElementById('inp-barang').value = '';
   document.getElementById('inp-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
   document.getElementById('inp-jumlah').value = '';
+  if (btn) { btn.disabled = false; btn.textContent = '✅ Simpan Semua'; }
 
   renderPreview();
   toast('Semua data berhasil disimpan! ✅', 'success');
@@ -1118,12 +1189,8 @@ function renderAdminTable() {
   }
   empty.style.display = 'none';
 
-  // Simpan index asli di all data (sebelum filter/sort) untuk hapus yang akurat
-  const allData = getData();
   const sorted = [...filtered].reverse();
-  tbody.innerHTML = sorted.map((d,i) => {
-    const origIndex = allData.findIndex(x => x === d || (String(x.id) === String(d.id)));
-    return `
+  tbody.innerHTML = sorted.map((d,i) => `
     <tr>
       <td>${i+1}</td>
       <td>${formatDate(d.tanggal)}</td>
@@ -1133,11 +1200,10 @@ function renderAdminTable() {
       <td><span class="badge badge-color">${d.warna}</span></td>
       <td><span class="badge badge-qty">${d.jumlah} Lsn</span></td>
       <td>
-        <button class="action-btn" onclick="bukaModalEdit(${origIndex})" title="Edit">✏️</button>
-        <button class="action-btn" onclick="hapusRowByIndex(${origIndex})" title="Hapus">🗑️</button>
+        <button class="action-btn" onclick="bukaModalEdit('${d._docId}')" title="Edit">✏️</button>
+        <button class="action-btn" onclick="hapusRowByIndex('${d._docId}')" title="Hapus">🗑️</button>
       </td>
-    </tr>`;
-  }).join('');
+    </tr>`).join('');
 }
 
 function resetFilter() {
@@ -1147,33 +1213,57 @@ function resetFilter() {
   renderAdminTable();
 }
 
-function hapusRow(id) {
+async function hapusRowByIndex(docId) {
   if (!confirm('Hapus data ini?')) return;
-  let data = getData();
-  data = data.filter(d => String(d.id) !== String(id));
-  saveData(data);
-  renderAdminTable();
-  loadRekapPekerjaSelect();
-  toast('Data dihapus.', 'danger');
+  try {
+    await db.collection('produksi_data').doc(docId).delete();
+    toast('Data dihapus.', 'danger');
+  } catch (e) {
+    console.error(e);
+    toast('Gagal menghapus data. Cek koneksi internet!', 'danger');
+  }
 }
 
-function hapusRowByIndex(index) {
-  if (!confirm('Hapus data ini?')) return;
-  let data = getData();
-  if (index < 0 || index >= data.length) return toast('Data tidak ditemukan!', 'danger');
-  data.splice(index, 1);
-  saveData(data);
-  renderAdminTable();
-  loadRekapPekerjaSelect();
-  toast('Data dihapus.', 'danger');
-}
-
-function hapusSemuaData() {
+async function hapusSemuaData() {
   if (!confirm('HAPUS SEMUA DATA? Tindakan ini tidak dapat dibatalkan!')) return;
-  saveData([]);
-  renderAdminTable();
-  loadRekapPekerjaSelect();
-  toast('Semua data telah dihapus.', 'danger');
+  try {
+    const snap = await db.collection('produksi_data').get();
+    const batch = db.batch();
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    toast('Semua data telah dihapus.', 'danger');
+  } catch (e) {
+    console.error(e);
+    toast('Gagal menghapus data. Cek koneksi internet!', 'danger');
+  }
+}
+
+async function migrasiDataLama() {
+  const oldData   = JSON.parse(localStorage.getItem('produksi_data') || '[]');
+  const oldBarang = JSON.parse(localStorage.getItem('produksi_barang') || 'null');
+
+  if (oldData.length === 0 && !oldBarang) {
+    return toast('Tidak ada data lama tersimpan di perangkat ini.', 'danger');
+  }
+  if (!confirm(`Migrasikan ${oldData.length} data produksi lama dari perangkat ini ke cloud? Lakukan ini HANYA SEKALI, dan hanya dari satu perangkat (misalnya laptop admin).`)) return;
+
+  try {
+    if (oldBarang) {
+      await db.collection('config').doc('barang').set({ list: oldBarang });
+    }
+    if (oldData.length > 0) {
+      const batch = db.batch();
+      oldData.forEach(d => {
+        const ref = db.collection('produksi_data').doc();
+        batch.set(ref, d);
+      });
+      await batch.commit();
+    }
+    toast(`Migrasi berhasil! ${oldData.length} data lama dipindahkan ke cloud. ✅`, 'success');
+  } catch (e) {
+    console.error(e);
+    toast('Migrasi gagal. Cek koneksi internet!', 'danger');
+  }
 }
 
 /* ═══════════════════════════════
@@ -1201,7 +1291,7 @@ function renderBarangTable() {
   `).join('');
 }
 
-function simpanBarang() {
+async function simpanBarang() {
   const nama  = document.getElementById('bg-nama').value.trim();
   const warnaRaw = document.getElementById('bg-warna').value.trim();
   const editIdxRaw = document.getElementById('bg-edit-index').value;
@@ -1213,7 +1303,7 @@ function simpanBarang() {
   const warna = warnaRaw.split(',').map(w => w.trim()).filter(w => w.length > 0);
   if (warna.length === 0) return toast('Daftar warna tidak valid!', 'danger');
 
-  const list = getBarang();
+  const list = [...getBarang()];
 
   // Cek duplikat nama (kecuali saat edit barang itu sendiri)
   const dup = list.findIndex(b => b.nama.toLowerCase() === nama.toLowerCase());
@@ -1221,16 +1311,19 @@ function simpanBarang() {
 
   if (editIdx === -1) {
     list.push({ nama, warna });
-    toast('Barang baru berhasil ditambahkan! ✅', 'success');
   } else {
     list[editIdx] = { nama, warna };
-    toast('Barang berhasil diperbarui! ✅', 'success');
   }
 
-  saveBarang(list);
+  try {
+    await saveBarang(list);
+  } catch (e) {
+    console.error(e);
+    return toast('Gagal menyimpan barang. Cek koneksi internet!', 'danger');
+  }
+
+  toast(editIdx === -1 ? 'Barang baru berhasil ditambahkan! ✅' : 'Barang berhasil diperbarui! ✅', 'success');
   batalEditBarang();
-  renderBarangTable();
-  loadFilterBarangSelect();
 }
 
 function editBarang(index) {
@@ -1255,28 +1348,30 @@ function batalEditBarang() {
   document.getElementById('bg-cancel-btn').style.display = 'none';
 }
 
-function hapusBarang(index) {
-  const list = getBarang();
+async function hapusBarang(index) {
+  const list = [...getBarang()];
   const b = list[index];
   if (!b) return;
   if (!confirm(`Hapus barang "${b.nama}"? Data produksi yang sudah ada untuk barang ini tidak akan terhapus, tapi barang ini tidak akan muncul lagi di pilihan tim produksi.`)) return;
 
   list.splice(index, 1);
-  saveBarang(list);
-  renderBarangTable();
-  loadFilterBarangSelect();
-  toast('Barang dihapus.', 'danger');
+  try {
+    await saveBarang(list);
+    toast('Barang dihapus.', 'danger');
+  } catch (e) {
+    console.error(e);
+    toast('Gagal menghapus barang. Cek koneksi internet!', 'danger');
+  }
 }
 
 /* ═══════════════════════════════
    EDIT DATA PRODUKSI (Admin)
 ═══════════════════════════════ */
-function bukaModalEdit(index) {
-  const data = getData();
-  const d = data[index];
+function bukaModalEdit(docId) {
+  const d = getData().find(x => x._docId === docId);
   if (!d) return toast('Data tidak ditemukan!', 'danger');
 
-  document.getElementById('em-index').value = index;
+  document.getElementById('em-index').value = docId;
   document.getElementById('em-nama').value   = d.nama;
   document.getElementById('em-jumlah').value = d.jumlah;
 
@@ -1310,8 +1405,8 @@ function loadWarnaModal() {
   }
 }
 
-function simpanEditData() {
-  const index  = parseInt(document.getElementById('em-index').value);
+async function simpanEditData() {
+  const docId  = document.getElementById('em-index').value;
   const nama   = document.getElementById('em-nama').value.trim();
   const barang = document.getElementById('em-barang').value;
   const warna  = document.getElementById('em-warna').value;
@@ -1322,15 +1417,14 @@ function simpanEditData() {
   if (!warna)       return toast('Pilih warna barang!', 'danger');
   if (!jumlah || jumlah < 1) return toast('Jumlah harus lebih dari 0!', 'danger');
 
-  const data = getData();
-  if (!data[index]) return toast('Data tidak ditemukan!', 'danger');
-
-  data[index] = { ...data[index], nama, barang, warna, jumlah };
-  saveData(data);
+  try {
+    await db.collection('produksi_data').doc(docId).update({ nama, barang, warna, jumlah });
+  } catch (e) {
+    console.error(e);
+    return toast('Gagal memperbarui data. Cek koneksi internet!', 'danger');
+  }
 
   tutupModalEdit();
-  renderAdminTable();
-  loadRekapPekerjaSelect();
   toast('Data berhasil diperbarui! ✅', 'success');
 }
 
