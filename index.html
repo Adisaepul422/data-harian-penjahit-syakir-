@@ -606,6 +606,55 @@
       </div>
     </div>
 
+    <!-- Rekap Barang per Pekerja -->
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Rekap Barang per Pekerja</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">Pilih rentang tanggal (bebas — harian, mingguan, atau custom) dan nama pekerja untuk melihat rekap barang & jumlah lusin yang sudah diinput.</p>
+      <div class="filter-row">
+        <div class="form-group">
+          <label>Dari Tanggal</label>
+          <input type="date" id="rk-dari">
+        </div>
+        <div class="form-group">
+          <label>Sampai Tanggal</label>
+          <input type="date" id="rk-sampai">
+        </div>
+        <div class="form-group">
+          <label>Nama Pekerja</label>
+          <select id="rk-pekerja">
+            <option value="">-- Pilih Pekerja --</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="height:42px;margin-top:auto" onclick="tampilkanRekap()">📊 Tampilkan Rekap</button>
+        <button class="btn btn-outline" style="height:42px;margin-top:auto" onclick="resetRekap()">↺ Reset</button>
+      </div>
+
+      <div id="rekap-hasil" style="display:none; margin-top:18px;">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Barang</th>
+                <th>Warna</th>
+                <th>Jumlah (Lusin)</th>
+              </tr>
+            </thead>
+            <tbody id="rekap-tbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:14px; text-align:right; font-size:15px; font-weight:700; color:var(--brand);">
+          Total Keseluruhan: <span id="rekap-total">0</span> Lusin
+        </div>
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn btn-accent" onclick="exportRekapExcel()">📥 Export Rekap ke Excel</button>
+        </div>
+      </div>
+      <div class="empty-state" id="rekap-empty" style="display:none;">
+        <div class="icon">📭</div>
+        <p>Tidak ada data untuk pekerja & rentang tanggal tersebut.</p>
+      </div>
+    </div>
+
     <!-- Table Admin -->
     <div class="card">
       <div class="card-title"><span class="dot"></span>Semua Data Produksi</div>
@@ -914,6 +963,7 @@ function initAdmin() {
   document.getElementById('f-tanggal').value = todayStr();
 
   loadFilterBarangSelect();
+  loadRekapPekerjaSelect();
   renderAdminTable();
   renderBarangTable();
 }
@@ -928,6 +978,112 @@ function loadFilterBarangSelect() {
     sel.appendChild(o);
   });
   sel.value = current;
+}
+
+/* ═══════════════════════════════
+   REKAP BARANG PER PEKERJA (Admin)
+═══════════════════════════════ */
+function loadRekapPekerjaSelect() {
+  const sel = document.getElementById('rk-pekerja');
+  if (!sel) return;
+  const current = sel.value;
+  const names = [...new Set(getData().map(d => d.nama))].sort((a,b) => a.localeCompare(b, 'id'));
+  sel.innerHTML = '<option value="">-- Pilih Pekerja --</option>' +
+    names.map(n => `<option value="${n}">${n}</option>`).join('');
+  sel.value = current;
+}
+
+function getRekapFiltered() {
+  const dari    = document.getElementById('rk-dari').value;
+  const sampai  = document.getElementById('rk-sampai').value;
+  const pekerja = document.getElementById('rk-pekerja').value;
+
+  let data = getData();
+  if (pekerja) data = data.filter(d => d.nama === pekerja);
+  if (dari)    data = data.filter(d => d.tanggal >= dari);
+  if (sampai)  data = data.filter(d => d.tanggal <= sampai);
+  return { data, pekerja, dari, sampai };
+}
+
+function ringkasRekap(data) {
+  const map = {};
+  data.forEach(d => {
+    const key = d.barang + '|' + d.warna;
+    if (!map[key]) map[key] = { barang: d.barang, warna: d.warna, jumlah: 0 };
+    map[key].jumlah += d.jumlah;
+  });
+  return Object.values(map).sort((a,b) =>
+    a.barang.localeCompare(b.barang, 'id') || a.warna.localeCompare(b.warna, 'id')
+  );
+}
+
+function tampilkanRekap() {
+  const dari   = document.getElementById('rk-dari').value;
+  const sampai = document.getElementById('rk-sampai').value;
+  const { data, pekerja } = getRekapFiltered();
+
+  if (!pekerja) return toast('Pilih nama pekerja terlebih dahulu!', 'danger');
+  if (dari && sampai && dari > sampai) return toast('Tanggal "Dari" tidak boleh lebih besar dari "Sampai"!', 'danger');
+
+  const hasil = document.getElementById('rekap-hasil');
+  const empty = document.getElementById('rekap-empty');
+  const tbody = document.getElementById('rekap-tbody');
+
+  if (data.length === 0) {
+    hasil.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  hasil.style.display = 'block';
+
+  const rows  = ringkasRekap(data);
+  const total = rows.reduce((a,b) => a + b.jumlah, 0);
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td><strong>${r.barang}</strong></td>
+      <td><span class="badge badge-color">${r.warna}</span></td>
+      <td><span class="badge badge-qty">${r.jumlah} Lsn</span></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('rekap-total').textContent = total;
+}
+
+function resetRekap() {
+  document.getElementById('rk-dari').value = '';
+  document.getElementById('rk-sampai').value = '';
+  document.getElementById('rk-pekerja').value = '';
+  document.getElementById('rekap-hasil').style.display = 'none';
+  document.getElementById('rekap-empty').style.display = 'none';
+}
+
+function exportRekapExcel() {
+  const { data, pekerja, dari, sampai } = getRekapFiltered();
+  if (!pekerja) return toast('Pilih nama pekerja terlebih dahulu!', 'danger');
+  if (data.length === 0) return toast('Tidak ada data untuk diekspor!', 'danger');
+
+  const rows = ringkasRekap(data).map(r => ({
+    'Barang': r.barang,
+    'Warna': r.warna,
+    'Jumlah (Lusin)': r.jumlah
+  }));
+  const total = rows.reduce((a,b) => a + b['Jumlah (Lusin)'], 0);
+  rows.push({ 'Barang': '', 'Warna': 'Total', 'Jumlah (Lusin)': total });
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 16 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Rekap');
+
+  const rangeLabel = dari && sampai ? `${dari}_sd_${sampai}`
+                    : dari ? `dari-${dari}`
+                    : sampai ? `sampai-${sampai}`
+                    : 'semua-tanggal';
+  XLSX.writeFile(wb, `rekap-${pekerja}-${rangeLabel}.xlsx`);
+  toast('Rekap berhasil diekspor! 📥', 'success');
 }
 
 function getFiltered() {
@@ -997,6 +1153,7 @@ function hapusRow(id) {
   data = data.filter(d => String(d.id) !== String(id));
   saveData(data);
   renderAdminTable();
+  loadRekapPekerjaSelect();
   toast('Data dihapus.', 'danger');
 }
 
@@ -1007,6 +1164,7 @@ function hapusRowByIndex(index) {
   data.splice(index, 1);
   saveData(data);
   renderAdminTable();
+  loadRekapPekerjaSelect();
   toast('Data dihapus.', 'danger');
 }
 
@@ -1014,6 +1172,7 @@ function hapusSemuaData() {
   if (!confirm('HAPUS SEMUA DATA? Tindakan ini tidak dapat dibatalkan!')) return;
   saveData([]);
   renderAdminTable();
+  loadRekapPekerjaSelect();
   toast('Semua data telah dihapus.', 'danger');
 }
 
@@ -1171,6 +1330,7 @@ function simpanEditData() {
 
   tutupModalEdit();
   renderAdminTable();
+  loadRekapPekerjaSelect();
   toast('Data berhasil diperbarui! ✅', 'success');
 }
 
