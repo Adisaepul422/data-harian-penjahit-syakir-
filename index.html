@@ -145,8 +145,8 @@
 
   .export-row { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
 
-  .admin-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-  @media(max-width:600px){ .admin-stats { grid-template-columns: repeat(2,1fr); } }
+  .admin-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+  @media(max-width:700px){ .admin-stats { grid-template-columns: repeat(2,1fr); } }
   .stat-card { background: var(--card); border-radius: var(--radius); padding: 16px; border: 1px solid var(--border); }
   .stat-card .s-num { font-size: 26px; font-weight: 700; color: var(--brand); }
   .stat-card .s-lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -238,7 +238,7 @@
       <div class="card-title"><span class="dot"></span>Input Data Produksi</div>
       <div class="form-group">
         <label>Nama Pekerja</label>
-        <input type="text" id="inp-nama" placeholder="Nama lengkap pekerja...">
+        <input type="text" id="inp-nama" readonly style="background:#f1f5f9;color:var(--muted);cursor:not-allowed;">
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -254,9 +254,18 @@
           </select>
         </div>
       </div>
-      <div class="form-group">
-        <label>Jumlah (Lusin)</label>
-        <input type="number" id="inp-jumlah" placeholder="0" min="1">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Jumlah</label>
+          <input type="number" id="inp-jumlah" placeholder="0" min="1">
+        </div>
+        <div class="form-group">
+          <label>Satuan</label>
+          <select id="inp-satuan">
+            <option value="Lusin">Lusin</option>
+            <option value="Pcs">Pcs</option>
+          </select>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn btn-add" onclick="tambahKePreview()">➕ Tambah</button>
@@ -297,6 +306,10 @@
       <div class="stat-card">
         <div class="s-num" id="a-lusin">0</div>
         <div class="s-lbl">Total Lusin</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-num" id="a-pcs">0</div>
+        <div class="s-lbl">Total Pcs</div>
       </div>
       <div class="stat-card">
         <div class="s-num" id="a-hari">0</div>
@@ -353,6 +366,7 @@
               <th>Tanggal</th>
               <th>Jumlah Entri</th>
               <th>Total Lusin</th>
+              <th>Total Pcs</th>
             </tr>
           </thead>
           <tbody id="tgl-tbody"></tbody>
@@ -426,7 +440,8 @@
               <tr>
                 <th>Barang</th>
                 <th>Warna</th>
-                <th>Jumlah (Lusin)</th>
+                <th>Satuan</th>
+                <th>Jumlah</th>
               </tr>
             </thead>
             <tbody id="rekap-tbody"></tbody>
@@ -458,7 +473,7 @@
               <th>Username</th>
               <th>Barang</th>
               <th>Warna</th>
-              <th>Jumlah (Lusin)</th>
+              <th>Jumlah</th>
               <th>Aksi</th>
             </tr>
           </thead>
@@ -490,9 +505,18 @@
         <select id="em-warna"></select>
       </div>
     </div>
-    <div class="form-group">
-      <label>Jumlah (Lusin)</label>
-      <input type="number" id="em-jumlah" min="1">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Jumlah</label>
+        <input type="number" id="em-jumlah" min="1">
+      </div>
+      <div class="form-group">
+        <label>Satuan</label>
+        <select id="em-satuan">
+          <option value="Lusin">Lusin</option>
+          <option value="Pcs">Pcs</option>
+        </select>
+      </div>
     </div>
     <input type="hidden" id="em-index">
     <div class="btn-row">
@@ -661,6 +685,10 @@ function initProduksi() {
   document.getElementById('prod-date').textContent =
     d.toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
+  // Nama pekerja otomatis mengikuti akun yang login, tidak perlu diketik ulang
+  const namaOtomatis = currentUsername ? currentUsername.charAt(0).toUpperCase() + currentUsername.slice(1) : '';
+  document.getElementById('inp-nama').value = namaOtomatis;
+
   loadBarangSelect();
 }
 
@@ -696,20 +724,23 @@ function tambahKePreview() {
   const barang = document.getElementById('inp-barang').value;
   const warna  = document.getElementById('inp-warna').value;
   const jumlah = parseInt(document.getElementById('inp-jumlah').value);
+  const satuan = document.getElementById('inp-satuan').value;
 
   if (!nama)        return toast('Nama pekerja wajib diisi!', 'danger');
   if (!barang)      return toast('Pilih nama barang!', 'danger');
   if (!warna)       return toast('Pilih warna barang!', 'danger');
   if (!jumlah || jumlah < 1) return toast('Jumlah harus lebih dari 0!', 'danger');
+  if (!satuan)      return toast('Pilih satuan (Lusin/Pcs)!', 'danger');
 
   previewBuffer.push({
     tempId: Date.now() + Math.random(),
-    nama, barang, warna, jumlah
+    nama, barang, warna, jumlah, satuan
   });
 
   document.getElementById('inp-barang').value = '';
   document.getElementById('inp-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
   document.getElementById('inp-jumlah').value = '';
+  document.getElementById('inp-satuan').value = 'Lusin';
 
   renderPreview();
   toast('Item ditambahkan ke preview!', 'success');
@@ -730,7 +761,7 @@ function renderPreview() {
     <div class="preview-item">
       <div class="pi-info">
         <div class="pi-name">${item.nama}</div>
-        <div class="pi-detail">${item.barang} · <span class="badge badge-color">${item.warna}</span> · <span class="badge badge-qty">${item.jumlah} Lsn</span></div>
+        <div class="pi-detail">${item.barang} · <span class="badge badge-color">${item.warna}</span> · <span class="badge badge-qty">${item.jumlah} ${item.satuan}</span></div>
       </div>
       <button class="pi-del" onclick="hapusPreview(${i})" title="Hapus item ini">✕</button>
     </div>
@@ -762,7 +793,8 @@ async function simpanSemua() {
         username: currentUsername || '',
         barang: item.barang,
         warna: item.warna,
-        jumlah: item.jumlah
+        jumlah: item.jumlah,
+        satuan: item.satuan || 'Lusin'
       });
     });
     await batch.commit();
@@ -774,10 +806,10 @@ async function simpanSemua() {
 
   previewBuffer = [];
 
-  document.getElementById('inp-nama').value   = '';
   document.getElementById('inp-barang').value = '';
   document.getElementById('inp-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
   document.getElementById('inp-jumlah').value = '';
+  document.getElementById('inp-satuan').value = 'Lusin';
   if (btn) { btn.disabled = false; btn.textContent = '✅ Simpan Semua'; }
 
   renderPreview();
@@ -843,9 +875,10 @@ function renderTanggalSummary() {
 
   const map = {};
   all.forEach(d => {
-    if (!map[d.tanggal]) map[d.tanggal] = { entri: 0, lusin: 0 };
+    if (!map[d.tanggal]) map[d.tanggal] = { entri: 0, lusin: 0, pcs: 0 };
     map[d.tanggal].entri += 1;
-    map[d.tanggal].lusin += d.jumlah;
+    if ((d.satuan || 'Lusin') === 'Lusin') map[d.tanggal].lusin += d.jumlah;
+    else map[d.tanggal].pcs += d.jumlah;
   });
 
   const tanggalList = Object.keys(map).sort((a,b) => b.localeCompare(a));
@@ -854,7 +887,8 @@ function renderTanggalSummary() {
     <tr class="tgl-row" onclick="filterByTanggal('${tgl}')">
       <td><strong>${formatDate(tgl)}</strong>${tgl === todayStr() ? ' <span class="badge badge-qty">Hari Ini</span>' : ''}</td>
       <td>${map[tgl].entri} entri</td>
-      <td><span class="badge badge-qty">${map[tgl].lusin} Lsn</span></td>
+      <td><span class="badge badge-qty">${map[tgl].lusin} Lusin</span></td>
+      <td><span class="badge badge-qty">${map[tgl].pcs} Pcs</span></td>
     </tr>
   `).join('');
 }
@@ -891,12 +925,13 @@ function getRekapFiltered() {
 function ringkasRekap(data) {
   const map = {};
   data.forEach(d => {
-    const key = d.barang + '|' + d.warna;
-    if (!map[key]) map[key] = { barang: d.barang, warna: d.warna, jumlah: 0 };
+    const satuan = d.satuan || 'Lusin';
+    const key = d.barang + '|' + d.warna + '|' + satuan;
+    if (!map[key]) map[key] = { barang: d.barang, warna: d.warna, satuan, jumlah: 0 };
     map[key].jumlah += d.jumlah;
   });
   return Object.values(map).sort((a,b) =>
-    a.barang.localeCompare(b.barang, 'id') || a.warna.localeCompare(b.warna, 'id')
+    a.barang.localeCompare(b.barang, 'id') || a.warna.localeCompare(b.warna, 'id') || a.satuan.localeCompare(b.satuan, 'id')
   );
 }
 
@@ -920,18 +955,22 @@ function tampilkanRekap() {
   empty.style.display = 'none';
   hasil.style.display = 'block';
 
-  const rows  = ringkasRekap(data);
-  const total = rows.reduce((a,b) => a + b.jumlah, 0);
+  const rows = ringkasRekap(data);
 
   tbody.innerHTML = rows.map(r => `
     <tr>
       <td><strong>${r.barang}</strong></td>
       <td><span class="badge badge-color">${r.warna}</span></td>
-      <td><span class="badge badge-qty">${r.jumlah} Lsn</span></td>
+      <td>${r.satuan}</td>
+      <td><span class="badge badge-qty">${r.jumlah} ${r.satuan}</span></td>
     </tr>
   `).join('');
 
-  document.getElementById('rekap-total').textContent = total;
+  // Total dihitung terpisah per satuan (Lusin & Pcs tidak bisa dijumlah jadi satu angka)
+  const totalPerSatuan = {};
+  rows.forEach(r => { totalPerSatuan[r.satuan] = (totalPerSatuan[r.satuan] || 0) + r.jumlah; });
+  const totalText = Object.keys(totalPerSatuan).map(s => `${totalPerSatuan[s]} ${s}`).join(' + ');
+  document.getElementById('rekap-total').textContent = totalText;
 }
 
 function resetRekap() {
@@ -947,16 +986,22 @@ function exportRekapExcel() {
   if (!pekerja) return toast('Pilih nama pekerja terlebih dahulu!', 'danger');
   if (data.length === 0) return toast('Tidak ada data untuk diekspor!', 'danger');
 
-  const rows = ringkasRekap(data).map(r => ({
+  const ringkas = ringkasRekap(data);
+  const rows = ringkas.map(r => ({
     'Barang': r.barang,
     'Warna': r.warna,
-    'Jumlah (Lusin)': r.jumlah
+    'Satuan': r.satuan,
+    'Jumlah': r.jumlah
   }));
-  const total = rows.reduce((a,b) => a + b['Jumlah (Lusin)'], 0);
-  rows.push({ 'Barang': '', 'Warna': 'Total', 'Jumlah (Lusin)': total });
+
+  const totalPerSatuan = {};
+  ringkas.forEach(r => { totalPerSatuan[r.satuan] = (totalPerSatuan[r.satuan] || 0) + r.jumlah; });
+  Object.keys(totalPerSatuan).forEach(s => {
+    rows.push({ 'Barang': '', 'Warna': '', 'Satuan': `Total ${s}`, 'Jumlah': totalPerSatuan[s] });
+  });
 
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 16 }];
+  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 12 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Rekap');
@@ -991,7 +1036,8 @@ function renderAdminTable() {
   const empty    = document.getElementById('admin-empty');
 
   document.getElementById('a-total').textContent   = all.length;
-  document.getElementById('a-lusin').textContent   = all.reduce((a,b)=>a+b.jumlah,0);
+  document.getElementById('a-lusin').textContent   = all.filter(d => (d.satuan || 'Lusin') === 'Lusin').reduce((a,b)=>a+b.jumlah,0);
+  document.getElementById('a-pcs').textContent     = all.filter(d => d.satuan === 'Pcs').reduce((a,b)=>a+b.jumlah,0);
   document.getElementById('a-hari').textContent    = all.filter(d=>d.tanggal===todayStr()).length;
   document.getElementById('a-pekerja').textContent = [...new Set(all.map(d=>d.nama))].length;
 
@@ -1014,7 +1060,7 @@ function renderAdminTable() {
       <td>${d.username ? `<span class="badge badge-user">${d.username}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
       <td>${d.barang}</td>
       <td><span class="badge badge-color">${d.warna}</span></td>
-      <td><span class="badge badge-qty">${d.jumlah} Lsn</span></td>
+      <td><span class="badge badge-qty">${d.jumlah} ${d.satuan || 'Lusin'}</span></td>
       <td>
         <button class="action-btn" onclick="bukaModalEdit('${d._docId}')" title="Edit">✏️</button>
         <button class="action-btn" onclick="hapusRowByIndex('${d._docId}')" title="Hapus">🗑️</button>
@@ -1184,6 +1230,7 @@ function bukaModalEdit(docId) {
   document.getElementById('em-index').value = docId;
   document.getElementById('em-nama').value   = d.nama;
   document.getElementById('em-jumlah').value = d.jumlah;
+  document.getElementById('em-satuan').value = d.satuan || 'Lusin';
 
   const selBarang = document.getElementById('em-barang');
   selBarang.innerHTML = '<option value="">-- Pilih Barang --</option>';
@@ -1221,14 +1268,16 @@ async function simpanEditData() {
   const barang = document.getElementById('em-barang').value;
   const warna  = document.getElementById('em-warna').value;
   const jumlah = parseInt(document.getElementById('em-jumlah').value);
+  const satuan = document.getElementById('em-satuan').value;
 
   if (!nama)        return toast('Nama pekerja wajib diisi!', 'danger');
   if (!barang)      return toast('Pilih nama barang!', 'danger');
   if (!warna)       return toast('Pilih warna barang!', 'danger');
   if (!jumlah || jumlah < 1) return toast('Jumlah harus lebih dari 0!', 'danger');
+  if (!satuan)      return toast('Pilih satuan (Lusin/Pcs)!', 'danger');
 
   try {
-    await db.collection('produksi_data').doc(docId).update({ nama, barang, warna, jumlah });
+    await db.collection('produksi_data').doc(docId).update({ nama, barang, warna, jumlah, satuan });
   } catch (e) {
     console.error(e);
     return toast('Gagal memperbarui data. Cek koneksi internet!', 'danger');
@@ -1254,15 +1303,22 @@ function exportExcel() {
     'Username': d.username || '',
     'Barang': d.barang,
     'Warna': d.warna,
-    'Jumlah (Lusin)': d.jumlah
+    'Jumlah': d.jumlah,
+    'Satuan': d.satuan || 'Lusin'
   }));
 
-  const totalLusin = data.reduce((a, b) => a + b.jumlah, 0);
-  rows.push({ 'No': '', 'Tanggal': '', 'Waktu': '', 'Nama Pekerja': '', 'Username': '', 'Barang': '', 'Warna': 'Total', 'Jumlah (Lusin)': totalLusin });
+  const totalPerSatuan = {};
+  data.forEach(d => {
+    const s = d.satuan || 'Lusin';
+    totalPerSatuan[s] = (totalPerSatuan[s] || 0) + d.jumlah;
+  });
+  Object.keys(totalPerSatuan).forEach(s => {
+    rows.push({ 'No': '', 'Tanggal': '', 'Waktu': '', 'Nama Pekerja': '', 'Username': '', 'Barang': '', 'Warna': `Total ${s}`, 'Jumlah': totalPerSatuan[s], 'Satuan': '' });
+  });
 
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
-    { wch: 5 }, { wch: 12 }, { wch: 8 }, { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 14 }
+    { wch: 5 }, { wch: 12 }, { wch: 8 }, { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 10 }
   ];
 
   const wb = XLSX.utils.book_new();
