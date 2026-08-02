@@ -12,7 +12,7 @@ const BARANG_DEFAULT = [
   { nama: "Hinata",         warna: ["Hitam","Coklat","Merah","Putih","Pink"] },
   { nama: "Arsha",          warna: ["Merah","Coklat","Hitam"] },
   { nama: "Famela",         warna: ["Coklat","Biru"] },
-  { nama: "Melody",         warna: ["—"] },
+  { nama: "Melody",         warna: ["Biru"] },
   { nama: "Leora",          warna: ["Coklat","Biru"] },
   { nama: "Marlinda",       warna: ["Coklat","Hitam"] },
   { nama: "Fairi",          warna: ["Coklat","Hitam","Merah"] },
@@ -22,9 +22,9 @@ const BARANG_DEFAULT = [
   { nama: "Revana",         warna: ["Hitam","Mint","Navy","Merah","Putih","Hijau Tua"] },
   { nama: "Parsya",         warna: ["Merah","Hitam","Navy"] },
   { nama: "Zaskia",         warna: ["Hitam","Coklat","Navy","Merah"] },
-  { nama: "Ransel Mini",    warna: ["Pink"] },
-  { nama: "Ransel Besar",   warna: ["Pink"] },
-  { nama: "Ransel Mini Pack",warna: ["Pink"] },
+  { nama: "Ransel Mini",    warna: ["Pink", "Biru", "Hitam", "Bw"] },
+  { nama: "Ransel Besar",   warna: ["Pink","Biru", "Hitam", "Bw"] },
+  { nama: "Ransel Mini Pack",warna: ["Pink","Biru", "Hitam", "Bw"] },
 ];
 
 const firebaseConfig = {
