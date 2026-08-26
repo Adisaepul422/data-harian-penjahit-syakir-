@@ -8,6 +8,84 @@ onBarangChanged = function () {
   loadBarangSelect();
 };
 
+// Timpa hook dari shared.js: setiap data produksi berubah (real-time), hitung ulang pendapatan
+onDataChanged = function () {
+  if (dataLoaded) renderPendapatanMingguan();
+};
+
+/* ═══════════════════════════════
+   PENDAPATAN SAYA (mingguan + riwayat)
+═══════════════════════════════ */
+function hitungPendapatanPeriode(dataSaya, dari, sampai) {
+  const filtered = dataSaya.filter(d => d.tanggal >= dari && d.tanggal <= sampai);
+  let total = 0, qty = 0;
+  const missingHarga = new Set();
+  filtered.forEach(d => {
+    const harga = getHargaLusin(d.barang);
+    if (harga === null) { missingHarga.add(d.barang); return; }
+    const lusinEq = toLusinEquivalent(d.jumlah, d.satuan || 'Lusin');
+    total += lusinEq * harga;
+    qty += lusinEq;
+  });
+  return { total, qty, missingHarga: [...missingHarga] };
+}
+
+function renderPendapatanMingguan() {
+  const dataSaya = getData().filter(d => d.username === currentUsername);
+  const mondayNow = getMondayOf(todayStr());
+  const sundayNow = addDaysStr(mondayNow, 6);
+
+  const { total, qty, missingHarga } = hitungPendapatanPeriode(dataSaya, mondayNow, sundayNow);
+
+  document.getElementById('pendapatan-periode').textContent =
+    `Minggu Ini • ${formatDate(mondayNow)} - ${formatDate(sundayNow)}`;
+  document.getElementById('pendapatan-total').textContent = formatRupiah(total);
+  document.getElementById('pendapatan-qty').textContent = `${formatQty(qty)} Lusin diproduksi`;
+
+  const warnEl = document.getElementById('pendapatan-warning');
+  if (missingHarga.length > 0) {
+    warnEl.style.display = 'block';
+    warnEl.textContent = `⚠️ Barang ini belum ada harganya, belum dihitung: ${missingHarga.join(', ')}. Hubungi admin ya.`;
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  document.getElementById('pendapatan-loading').style.display = 'none';
+  document.getElementById('pendapatan-content').style.display = 'block';
+
+  renderRiwayatPendapatan(dataSaya, mondayNow);
+}
+
+function renderRiwayatPendapatan(dataSaya, mondayIni) {
+  const mingguSet = new Set(dataSaya.map(d => getMondayOf(d.tanggal)));
+  mingguSet.delete(mondayIni); // minggu ini sudah ditampilkan terpisah di atas
+  const mingguList = [...mingguSet].sort((a,b) => b.localeCompare(a));
+
+  const tbody = document.getElementById('riwayat-tbody');
+  if (mingguList.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px;">Belum ada riwayat minggu sebelumnya.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = mingguList.map(monday => {
+    const sunday = addDaysStr(monday, 6);
+    const { total, qty } = hitungPendapatanPeriode(dataSaya, monday, sunday);
+    return `<tr>
+      <td>${formatDate(monday)} - ${formatDate(sunday)}</td>
+      <td>${formatQty(qty)} Lsn</td>
+      <td><strong>${formatRupiah(total)}</strong></td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleRiwayatPendapatan() {
+  const el = document.getElementById('riwayat-pendapatan');
+  const btnText = document.getElementById('riwayat-toggle-text');
+  const showing = el.style.display !== 'none';
+  el.style.display = showing ? 'none' : 'block';
+  btnText.textContent = showing ? 'Lihat Riwayat Minggu Lalu' : 'Sembunyikan Riwayat';
+}
+
 function initProduksi() {
   const d = new Date();
   document.getElementById('prod-date').textContent =

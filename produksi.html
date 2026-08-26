@@ -33,6 +33,32 @@
   </div>
 
   <div class="main-wrap">
+    <!-- Pendapatan Saya -->
+    <div class="card" id="pendapatan-card">
+      <div class="card-title"><span class="dot" style="background:var(--success)"></span>💰 Pendapatan Saya</div>
+      <div id="pendapatan-loading" class="loading-state">
+        <div class="dot-flash"><span></span><span></span><span></span></div>
+        <p>Menghitung pendapatan...</p>
+      </div>
+      <div id="pendapatan-content" style="display:none;">
+        <div style="text-align:center; padding: 4px 0 14px;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;" id="pendapatan-periode"></div>
+          <div style="font-size:30px;font-weight:800;color:var(--success);" id="pendapatan-total">Rp0</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;" id="pendapatan-qty">0 Lusin</div>
+        </div>
+        <div id="pendapatan-warning" style="display:none; background:#fef3c7;color:#92400e;font-size:11px;padding:8px 10px;border-radius:8px;margin-bottom:12px;"></div>
+        <button class="btn btn-outline" style="width:100%;" onclick="toggleRiwayatPendapatan()">📜 <span id="riwayat-toggle-text">Lihat Riwayat Minggu Lalu</span></button>
+        <div id="riwayat-pendapatan" style="display:none; margin-top:14px;">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Periode</th><th>Lusin</th><th>Pendapatan</th></tr></thead>
+              <tbody id="riwayat-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title"><span class="dot"></span>Input Data Produksi</div>
       <div class="form-group">

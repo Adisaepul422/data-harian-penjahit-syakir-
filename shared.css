@@ -276,6 +276,41 @@
   .loading-state .dot-flash span:nth-child(2) { animation-delay: .15s; }
   .loading-state .dot-flash span:nth-child(3) { animation-delay: .3s; }
 
+  .notif-bell {
+    position: relative;
+    background: rgba(255,255,255,0.15);
+    border: none;
+    border-radius: 8px;
+    width: 32px; height: 32px;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .notif-bell:hover { background: rgba(255,255,255,0.28); }
+  .notif-bell.ringing { animation: bellRing .5s ease-in-out 3; }
+  @keyframes bellRing {
+    0%,100% { transform: rotate(0); }
+    20% { transform: rotate(15deg); }
+    40% { transform: rotate(-15deg); }
+    60% { transform: rotate(8deg); }
+    80% { transform: rotate(-8deg); }
+  }
+  .notif-count {
+    position: absolute;
+    top: -4px; right: -4px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 16px; height: 16px;
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 3px;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  #notif-banner { display: flex; flex-wrap: wrap; }
+
   .conn-badge {
     display: inline-flex; align-items: center; gap: 5px;
     font-size: 11px; font-weight: 600;
@@ -305,3 +340,73 @@
     .export-row { flex-direction: column; }
     .export-row .btn { width: 100%; }
   }
+
+/* ═══════════════════════════════
+   SLIP GAJI
+═══════════════════════════════ */
+.slip-sheet {
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  font-size: 13px;
+  color: #1e293b;
+}
+.slip-header {
+  background: #2d3b32;
+  color: #fff;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.slip-header h2 { font-size: 20px; letter-spacing: 2px; font-weight: 800; margin: 0; }
+.slip-body { padding: 18px 20px; }
+.slip-info { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-bottom: 14px; font-size: 12.5px; }
+.slip-info div { display: flex; gap: 4px; }
+.slip-info .lbl { color: var(--muted); min-width: 78px; flex-shrink: 0; }
+.slip-info input {
+  border: none; border-bottom: 1px dashed #cbd5e1; font-size: 12.5px;
+  font-weight: 600; width: 100%; padding: 0 2px; font-family: inherit; color: #1e293b;
+}
+.slip-info input:focus { outline: none; border-bottom-color: var(--brand); }
+
+.slip-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.slip-table th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px;
+  color: var(--muted); padding: 4px 4px; border-bottom: 2px solid #1e293b;
+}
+.slip-table td { padding: 3px 4px; }
+.slip-table .slip-right { text-align: right; }
+.slip-table .slip-center { text-align: center; }
+.slip-lembur-row input[type="number"] {
+  width: 60px; border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font-size: 12px;
+}
+
+.slip-divider { border: none; border-top: 2px solid #1e293b; margin: 8px 0; }
+.slip-total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 14px; padding: 4px 0; }
+
+.slip-pengurangan { margin-top: 18px; }
+.slip-pengurangan h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 6px; }
+.slip-pengurangan-row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; padding: 3px 0; gap: 8px; }
+.slip-pengurangan-row label { flex: 1; }
+.slip-pengurangan-row input[type="text"] { flex: 1; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11.5px; }
+.slip-pengurangan-row input[type="number"] {
+  width: 100px; text-align: right; border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 6px; font-size: 12.5px; color: var(--danger); font-weight: 600;
+}
+
+.slip-final { margin-top: 16px; padding-top: 10px; border-top: 2px solid #1e293b; }
+.slip-final .slip-total-row { font-size: 16px; }
+
+@media print {
+  body * { visibility: hidden; }
+  #slip-modal, #slip-modal * { visibility: visible; }
+  #slip-modal {
+    position: absolute; inset: 0; background: #fff !important;
+    padding: 0; display: block !important; overflow: visible;
+  }
+  .slip-sheet { box-shadow: none; border-radius: 0; max-width: 100%; margin: 0; }
+  .no-print { display: none !important; }
+  .slip-info input, .slip-pengurangan-row input { border: none !important; }
+}

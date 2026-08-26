@@ -3,6 +3,96 @@
 // Pastikan yang buka halaman ini sudah login sebagai admin, kalau tidak, dilempar ke login.html
 requireRole('admin');
 
+/* ═══════════════════════════════
+   NOTIFIKASI DATA BARU
+═══════════════════════════════ */
+let unreadCount = 0;
+let titleFlashInterval = null;
+const originalTitle = document.title;
+
+// Timpa hook dari shared.js: dipanggil setiap ada entri baru dari tim produksi
+onNewDataAdded = function (entries) {
+  unreadCount += entries.length;
+  updateNotifBadge();
+  playNotifSound();
+  ringBell();
+
+  entries.forEach(e => {
+    showBrowserNotification(
+      '📦 Data Produksi Baru!',
+      `${e.nama} • ${e.barang} (${e.warna}) — ${e.jumlah} ${e.satuan || 'Lusin'}`,
+      () => { showAdminTab('data'); clearNotifBadge(); }
+    );
+  });
+
+  if (document.hidden) startTitleFlash();
+};
+
+function updateNotifBadge() {
+  const el = document.getElementById('notif-count');
+  if (!el) return;
+  if (unreadCount > 0) {
+    el.textContent = unreadCount > 99 ? '99+' : unreadCount;
+    el.style.display = 'flex';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function clearNotifBadge() {
+  unreadCount = 0;
+  updateNotifBadge();
+  stopTitleFlash();
+}
+
+function ringBell() {
+  const bell = document.getElementById('notif-bell');
+  if (!bell) return;
+  bell.classList.remove('ringing');
+  void bell.offsetWidth; // restart animasi kalau notif beruntun
+  bell.classList.add('ringing');
+}
+
+function startTitleFlash() {
+  if (titleFlashInterval) return;
+  let showAlert = true;
+  titleFlashInterval = setInterval(() => {
+    document.title = showAlert ? `🔴 (${unreadCount}) Data Baru Masuk!` : originalTitle;
+    showAlert = !showAlert;
+  }, 1000);
+}
+function stopTitleFlash() {
+  if (titleFlashInterval) { clearInterval(titleFlashInterval); titleFlashInterval = null; }
+  document.title = originalTitle;
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) stopTitleFlash();
+});
+
+function mintaIzinNotifikasi() {
+  if (!('Notification' in window)) {
+    toast('Browser ini tidak mendukung notifikasi.', 'danger');
+    return;
+  }
+  Notification.requestPermission().then(perm => {
+    document.getElementById('notif-banner').style.display = 'none';
+    if (perm === 'granted') {
+      toast('Notifikasi diaktifkan! 🔔', 'success');
+      new Notification('Notifikasi Aktif ✅', { body: 'Anda akan diberitahu setiap ada data produksi baru masuk.' });
+    } else {
+      toast('Notifikasi tidak diizinkan. Bisa diaktifkan lagi lewat pengaturan browser.', 'danger');
+    }
+  });
+}
+
+function checkNotifBanner() {
+  const banner = document.getElementById('notif-banner');
+  if (!banner) return;
+  if ('Notification' in window && Notification.permission === 'default') {
+    banner.style.display = 'flex';
+  }
+}
+
 // Timpa hook dari shared.js: refresh tampilan admin setiap data/barang berubah real-time
 onDataChanged = function () {
   renderAdminTable();
@@ -37,6 +127,9 @@ function showAdminTab(tabId) {
 
   document.getElementById('tab-' + tabId).classList.add('active');
   document.querySelector(`.admin-subnav-btn[data-tab="${tabId}"]`).classList.add('active');
+
+  // Buka tab Data Produksi = admin dianggap sudah "mengecek" data baru
+  if (tabId === 'data') clearNotifBadge();
 
   // Scroll ke atas konten setiap ganti tab supaya tidak nyangkut di posisi scroll lama
   window.scrollTo({ top: document.querySelector('.admin-subnav').offsetTop - 56, behavior: 'smooth' });
@@ -233,6 +326,210 @@ function exportRekapExcel() {
   toast('Rekap berhasil diekspor! 📥', 'success');
 }
 
+/* ═══════════════════════════════
+   SLIP GAJI (Admin)
+═══════════════════════════════ */
+function resetSlipList() {
+  document.getElementById('sg-dari').value = '';
+  document.getElementById('sg-sampai').value = '';
+  document.getElementById('slip-list-wrap').style.display = 'none';
+  document.getElementById('slip-list-empty').style.display = 'none';
+}
+
+// Hitung baris barang (qty & subtotal per barang) untuk satu pekerja pada rentang tanggal.
+// Selalu mengembalikan SEMUA barang di HARGA_LUSIN (walau qty 0), sesuai format slip kertas asli.
+function hitungBarisSlip(dataPekerja, dari, sampai) {
+  const filtered = dataPekerja.filter(d => d.tanggal >= dari && d.tanggal <= sampai);
+  const qtyByKey = {};
+  const barangTanpaHarga = new Set();
+  filtered.forEach(d => {
+    const key = (d.barang || '').trim().toLowerCase();
+    if (!HARGA_LUSIN.hasOwnProperty(key)) { barangTanpaHarga.add(d.barang); return; }
+    const lusinEq = toLusinEquivalent(d.jumlah, d.satuan || 'Lusin');
+    qtyByKey[key] = (qtyByKey[key] || 0) + lusinEq;
+  });
+
+  const rows = Object.keys(HARGA_LUSIN).map(key => {
+    const qty = qtyByKey[key] || 0;
+    const harga = HARGA_LUSIN[key];
+    return { key, label: titleCase(key), harga, qty, subtotal: qty * harga };
+  });
+
+  return { rows, barangTanpaHarga: [...barangTanpaHarga] };
+}
+
+function tampilkanSlipList() {
+  const dari   = document.getElementById('sg-dari').value;
+  const sampai = document.getElementById('sg-sampai').value;
+  if (!dari || !sampai) return toast('Pilih dari & sampai tanggal terlebih dahulu!', 'danger');
+  if (dari > sampai) return toast('Tanggal "Dari" tidak boleh lebih besar dari "Sampai"!', 'danger');
+
+  const all = getData().filter(d => d.tanggal >= dari && d.tanggal <= sampai);
+  const wrap  = document.getElementById('slip-list-wrap');
+  const empty = document.getElementById('slip-list-empty');
+  const tbody = document.getElementById('slip-list-tbody');
+
+  if (all.length === 0) {
+    wrap.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  wrap.style.display = 'block';
+
+  // Kumpulkan pekerja unik (by username, fallback nama kalau username kosong)
+  const pekerjaMap = {};
+  all.forEach(d => {
+    const uname = d.username || d.nama;
+    if (!pekerjaMap[uname]) pekerjaMap[uname] = { username: d.username || '', nama: d.nama };
+  });
+
+  const daftarPekerja = Object.values(pekerjaMap).sort((a,b) => a.nama.localeCompare(b.nama, 'id'));
+
+  tbody.innerHTML = daftarPekerja.map(p => {
+    const dataPekerja = getData().filter(d => (d.username || d.nama) === (p.username || p.nama));
+    const { rows } = hitungBarisSlip(dataPekerja, dari, sampai);
+    const totalQty = rows.reduce((a,r) => a + r.qty, 0);
+    const totalRp  = rows.reduce((a,r) => a + r.subtotal, 0);
+    return `
+      <tr>
+        <td><strong>${p.nama}</strong></td>
+        <td>${p.username ? `<span class="badge badge-user">${p.username}</span>` : '—'}</td>
+        <td>${formatQty(totalQty)} Lsn</td>
+        <td><span class="badge badge-qty">${formatRupiah(totalRp)}</span></td>
+        <td><button class="btn btn-accent" style="padding:6px 12px;font-size:12px;" onclick="bukaSlipModal('${(p.username||'').replace(/'/g,"\\'")}', '${p.nama.replace(/'/g,"\\'")}', '${dari}', '${sampai}')">🖨️ Cetak Slip</button></td>
+      </tr>`;
+  }).join('');
+}
+
+function bukaSlipModal(username, nama, dari, sampai) {
+  const dataPekerja = getData().filter(d => (d.username || d.nama) === (username || nama));
+  const { rows, barangTanpaHarga } = hitungBarisSlip(dataPekerja, dari, sampai);
+
+  const totalBarangQty = rows.reduce((a,r) => a + r.qty, 0);
+  const totalBarangRp  = rows.reduce((a,r) => a + r.subtotal, 0);
+
+  const periodeLabel = `${formatDate(dari)} - ${formatDate(sampai)}`;
+
+  const rowsHTML = rows.map(r => `
+    <tr>
+      <td class="slip-center">${r.qty ? formatQty(r.qty) : ''}</td>
+      <td>${r.label}</td>
+      <td class="slip-center">${Math.round(r.harga/1000)}</td>
+      <td class="slip-right">${formatRupiah(r.subtotal)}</td>
+    </tr>`).join('');
+
+  const peringatanHarga = barangTanpaHarga.length > 0
+    ? `<div class="no-print" style="background:#fef3c7;color:#92400e;font-size:11px;padding:6px 8px;border-radius:6px;margin-top:8px;">⚠️ Barang belum ada harga: ${barangTanpaHarga.join(', ')} — tidak dihitung di slip ini.</div>`
+    : '';
+
+  document.getElementById('slip-print-area').innerHTML = `
+    <div class="slip-header">
+      <h2>SLIP GAJI</h2>
+    </div>
+    <div class="slip-body">
+      <div class="slip-info">
+        <div><span class="lbl">Perusahaan</span>: <strong>SYAKIRFAMILIA GROUP</strong></div>
+        <div><span class="lbl">Periode</span>: <strong>${periodeLabel}</strong></div>
+        <div><span class="lbl">Alamat</span>: Jl. Anyar Bojong Kukun, Bandung 40382</div>
+        <div><span class="lbl">Nama Karyawan</span>: <input type="text" id="slip-nama" value="${nama.toUpperCase()}"></div>
+        <div></div>
+        <div><span class="lbl">Jabatan</span>: <input type="text" id="slip-jabatan" value="PRODUKSI"></div>
+      </div>
+
+      <table class="slip-table">
+        <thead>
+          <tr>
+            <th class="slip-center" style="width:34px;">Qty</th>
+            <th>Nama Barang</th>
+            <th class="slip-center" style="width:50px;">HPP</th>
+            <th class="slip-right" style="width:90px;">Jumlah</th>
+          </tr>
+        </thead>
+        <tbody id="slip-barang-tbody">
+          ${rowsHTML}
+          <tr class="slip-lembur-row">
+            <td></td>
+            <td>Lembur <input type="number" id="slip-lembur-qty" value="0" min="0" oninput="hitungTotalSlip()"> × <input type="number" id="slip-lembur-rate" value="5000" min="0" oninput="hitungTotalSlip()" style="width:70px;"></td>
+            <td></td>
+            <td class="slip-right" id="slip-lembur-jumlah">Rp0</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <hr class="slip-divider">
+      <div class="slip-total-row">
+        <span>Total Penghasilan (${formatQty(totalBarangQty)} Lusin)</span>
+        <span id="slip-total-penghasilan">${formatRupiah(totalBarangRp)}</span>
+      </div>
+      <div class="no-print" style="font-size:10.5px;color:var(--muted);margin-top:4px;">Data satuan Pcs otomatis dikonversi (1 Lusin = 12 Pcs).</div>
+      ${peringatanHarga}
+
+      <div class="slip-pengurangan">
+        <h4>Pengurangan</h4>
+        <div class="slip-pengurangan-row">
+          <label>Tabungan</label>
+          <input type="number" id="slip-tabungan" value="0" min="0" oninput="hitungTotalSlip()">
+        </div>
+        <div class="slip-pengurangan-row">
+          <label>Pinjaman Koperasi</label>
+          <input type="number" id="slip-koperasi" value="0" min="0" oninput="hitungTotalSlip()">
+        </div>
+        <div class="slip-pengurangan-row">
+          <label>Pinjaman Lainnya (<input type="text" id="slip-lain-ket" placeholder="keterangan" style="width:80px;display:inline;">)</label>
+          <input type="number" id="slip-lain-nominal" value="0" min="0" oninput="hitungTotalSlip()">
+        </div>
+        <div class="slip-total-row" style="font-size:12.5px;margin-top:4px;">
+          <span>Total Pengurangan</span>
+          <span id="slip-total-pengurangan" style="color:var(--danger)">Rp0</span>
+        </div>
+      </div>
+
+      <div class="slip-final">
+        <div class="slip-total-row">
+          <span>TOTAL DITERIMA KARYAWAN</span>
+          <span id="slip-total-diterima">${formatRupiah(totalBarangRp)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('slip-print-area').dataset.totalBarang = totalBarangRp;
+  document.getElementById('slip-modal').style.display = 'flex';
+  hitungTotalSlip();
+}
+
+function hitungTotalSlip() {
+  const area = document.getElementById('slip-print-area');
+  if (!area) return;
+  const totalBarang = parseFloat(area.dataset.totalBarang) || 0;
+
+  const lemburQty  = parseFloat(document.getElementById('slip-lembur-qty').value) || 0;
+  const lemburRate = parseFloat(document.getElementById('slip-lembur-rate').value) || 0;
+  const lemburJumlah = lemburQty * lemburRate;
+  document.getElementById('slip-lembur-jumlah').textContent = formatRupiah(lemburJumlah);
+
+  const totalPenghasilan = totalBarang + lemburJumlah;
+  document.getElementById('slip-total-penghasilan').textContent = formatRupiah(totalPenghasilan);
+
+  const tabungan = parseFloat(document.getElementById('slip-tabungan').value) || 0;
+  const koperasi = parseFloat(document.getElementById('slip-koperasi').value) || 0;
+  const lain     = parseFloat(document.getElementById('slip-lain-nominal').value) || 0;
+  const totalPengurangan = tabungan + koperasi + lain;
+  document.getElementById('slip-total-pengurangan').textContent = formatRupiah(totalPengurangan);
+
+  const totalDiterima = totalPenghasilan - totalPengurangan;
+  document.getElementById('slip-total-diterima').textContent = formatRupiah(totalDiterima);
+}
+
+function tutupSlipModal() {
+  document.getElementById('slip-modal').style.display = 'none';
+}
+
+function cetakSlip() {
+  window.print();
+}
+
 function getFiltered() {
   let data = getData();
   const fTgl      = document.getElementById('f-tanggal').value;
@@ -323,34 +620,6 @@ async function hapusSemuaData() {
   } catch (e) {
     console.error(e);
     toast('Gagal menghapus data. Cek koneksi internet!', 'danger');
-  }
-}
-
-async function migrasiDataLama() {
-  const oldData   = JSON.parse(localStorage.getItem('produksi_data') || '[]');
-  const oldBarang = JSON.parse(localStorage.getItem('produksi_barang') || 'null');
-
-  if (oldData.length === 0 && !oldBarang) {
-    return toast('Tidak ada data lama tersimpan di perangkat ini.', 'danger');
-  }
-  if (!confirm(`Migrasikan ${oldData.length} data produksi lama dari perangkat ini ke cloud? Lakukan ini HANYA SEKALI, dan hanya dari satu perangkat (misalnya laptop admin).`)) return;
-
-  try {
-    if (oldBarang) {
-      await db.collection('config').doc('barang').set({ list: oldBarang });
-    }
-    if (oldData.length > 0) {
-      const batch = db.batch();
-      oldData.forEach(d => {
-        const ref = db.collection('produksi_data').doc();
-        batch.set(ref, d);
-      });
-      await batch.commit();
-    }
-    toast(`Migrasi berhasil! ${oldData.length} data lama dipindahkan ke cloud. ✅`, 'success');
-  } catch (e) {
-    console.error(e);
-    toast('Migrasi gagal. Cek koneksi internet!', 'danger');
   }
 }
 
@@ -571,4 +840,7 @@ function exportExcel() {
   toast('File Excel (.xlsx) berhasil diunduh! 📥', 'success');
 }
 
-document.addEventListener('DOMContentLoaded', initAdmin);
+document.addEventListener('DOMContentLoaded', () => {
+  initAdmin();
+  checkNotifBanner();
+});
