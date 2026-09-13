@@ -3,6 +3,10 @@
 // Pastikan yang buka halaman ini sudah login sebagai produksi, kalau tidak, dilempar ke login.html
 const currentUsername = requireRole('produksi');
 
+// Tim menentukan: daftar harga per lusin mana yang dipakai, dan apakah
+// field "Penggunaan Bahan" ditampilkan (khusus tim pola).
+const currentTim = (USERS[currentUsername] && USERS[currentUsername].tim) || 'penjahit';
+
 // Timpa hook dari shared.js: saat daftar barang berubah (real-time), refresh dropdown barang
 onBarangChanged = function () {
   loadBarangSelect();
@@ -21,7 +25,7 @@ function hitungPendapatanPeriode(dataSaya, dari, sampai) {
   let total = 0, qty = 0;
   const missingHarga = new Set();
   filtered.forEach(d => {
-    const harga = getHargaLusin(d.barang);
+    const harga = getHargaLusin(d.barang, currentTim);
     if (harga === null) { missingHarga.add(d.barang); return; }
     const lusinEq = toLusinEquivalent(d.jumlah, d.satuan || 'Lusin');
     total += lusinEq * harga;
@@ -95,6 +99,13 @@ function initProduksi() {
   const namaOtomatis = currentUsername ? currentUsername.charAt(0).toUpperCase() + currentUsername.slice(1) : '';
   document.getElementById('inp-nama').value = namaOtomatis;
 
+  // Field "Penggunaan Bahan" cuma muncul untuk tim pola, dan label topbar disesuaikan
+  if (currentTim === 'pola') {
+    document.getElementById('wrap-inp-bahan').style.display = 'block';
+    const badge = document.querySelector('.topbar-badge');
+    if (badge) badge.textContent = 'Tim Pola';
+  }
+
   loadBarangSelect();
 }
 
@@ -132,22 +143,25 @@ function tambahKePreview() {
   const warna  = document.getElementById('inp-warna').value;
   const jumlah = parseInt(document.getElementById('inp-jumlah').value);
   const satuan = document.getElementById('inp-satuan').value;
+  const bahan  = currentTim === 'pola' ? document.getElementById('inp-bahan').value.trim() : '';
 
   if (!nama)        return toast('Nama pekerja wajib diisi!', 'danger');
   if (!barang)      return toast('Pilih nama barang!', 'danger');
   if (!warna)       return toast('Pilih warna barang!', 'danger');
   if (!jumlah || jumlah < 1) return toast('Jumlah harus lebih dari 0!', 'danger');
   if (!satuan)      return toast('Pilih satuan (Lusin/Pcs)!', 'danger');
+  if (currentTim === 'pola' && !bahan) return toast('Penggunaan bahan wajib diisi!', 'danger');
 
   previewBuffer.push({
     tempId: Date.now() + Math.random(),
-    nama, barang, warna, jumlah, satuan
+    nama, barang, warna, jumlah, satuan, bahan
   });
 
   document.getElementById('inp-barang').value = '';
   document.getElementById('inp-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
   document.getElementById('inp-jumlah').value = '';
   document.getElementById('inp-satuan').value = 'Lusin';
+  if (currentTim === 'pola') document.getElementById('inp-bahan').value = '';
 
   renderPreview();
   toast('Item ditambahkan ke preview!', 'success');
@@ -169,6 +183,7 @@ function renderPreview() {
       <div class="pi-info">
         <div class="pi-name">${item.nama}</div>
         <div class="pi-detail">${item.barang} · <span class="badge badge-color">${item.warna}</span> · <span class="badge badge-qty">${item.jumlah} ${item.satuan}</span></div>
+        ${item.bahan ? `<div class="pi-detail" style="margin-top:2px;">🧵 ${item.bahan}</div>` : ''}
       </div>
       <button class="pi-del" onclick="hapusPreview(${i})" title="Hapus item ini">✕</button>
     </div>
@@ -198,10 +213,12 @@ async function simpanSemua() {
         tanggal, waktu,
         nama: item.nama,
         username: currentUsername || '',
+        tim: currentTim,
         barang: item.barang,
         warna: item.warna,
         jumlah: item.jumlah,
-        satuan: item.satuan || 'Lusin'
+        satuan: item.satuan || 'Lusin',
+        bahan: item.bahan || ''
       });
     });
     await batch.commit();

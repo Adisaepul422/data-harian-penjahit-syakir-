@@ -9,7 +9,8 @@
 // Harga per LUSIN tiap jenis barang — dipakai untuk Slip Gaji (admin)
 // dan Pendapatan Mingguan (produksi). Key HARUS huruf kecil semua
 // (pencocokan dengan nama barang dilakukan case-insensitive).
-const HARGA_LUSIN = {
+// Harga per Lusin untuk TIM PENJAHIT (pekerjaan menjahit)
+const HARGA_LUSIN_PENJAHIT = {
   "arsha":              80000,
   "marlinda":           70000,
   "arliwi":             45000,
@@ -30,10 +31,42 @@ const HARGA_LUSIN = {
   "ransel besar":       115000,
 };
 
+// Harga per Lusin untuk TIM POLA (pekerjaan cutting/pola)
+const HARGA_LUSIN_POLA = {
+  "arsha":              15000,
+  "marlinda":           15000,
+  "arliwi":             10000,
+  "famela":             15000,
+  "sikamaru":           15000,
+  "melody":             15000,
+  "leora":              12000,
+  "hinata":             15000,
+  "ransel mini":        15000,
+  "revana":             15000,
+  "zaskia":             15000,
+  "dinara":             15000,
+  "azzura":             15000,
+  "ananda":             15000,
+  "fairi":              15000,
+  "parsya":             15000,
+  "ransel mini pack":   15000,
+  "ransel besar":       20000,
+};
+
+// Dipertahankan supaya kode lama yang masih memanggil HARGA_LUSIN (tanpa embel tim)
+// tetap jalan — default-nya mengikuti harga Tim Penjahit.
+const HARGA_LUSIN = HARGA_LUSIN_PENJAHIT;
+
+// Pilih daftar harga yang sesuai berdasarkan tim ('pola' atau 'penjahit'/lainnya)
+function getDaftarHargaByTim(tim) {
+  return tim === 'pola' ? HARGA_LUSIN_POLA : HARGA_LUSIN_PENJAHIT;
+}
+
 // Cari harga per lusin suatu barang (case-insensitive). null = harga belum diatur.
-function getHargaLusin(namaBarang) {
+function getHargaLusin(namaBarang, tim) {
+  const daftar = getDaftarHargaByTim(tim);
   const key = (namaBarang || '').trim().toLowerCase();
-  return HARGA_LUSIN.hasOwnProperty(key) ? HARGA_LUSIN[key] : null;
+  return daftar.hasOwnProperty(key) ? daftar[key] : null;
 }
 
 function formatRupiah(n) {
@@ -82,8 +115,8 @@ const BARANG_DEFAULT = [
   { nama: "Leora",          warna: ["Coklat","Biru"] },
   { nama: "Marlinda",       warna: ["Coklat","Hitam"] },
   { nama: "Fairi",          warna: ["Coklat","Hitam","Merah"] },
-  { nama: "Dinara",         warna: ["Hitam","Merah","Abu","Pink"] },
-  { nama: "Ananda",         warna: ["Hitam","Coklat","Putih","Abu","Pink", "Merah"] },
+  { nama: "Dinara",         warna: ["Hitam","Merah","Abu","Pink","Putih"] },
+  { nama: "Ananda",         warna: ["Hitam","Coklat","Putih","Abu","Merah"] },
   { nama: "Azzura",         warna: ["Coklat","Cream"] },
   { nama: "Revana",         warna: ["Hitam","Mint","Navy","Merah","Putih","Hijau Tua"] },
   { nama: "Parsya",         warna: ["Merah","Hitam","Navy"] },
@@ -214,18 +247,19 @@ function getData() {
 }
 
 const USERS = {
-  adi:     { pass: "produksi123", role: "produksi" },
-  ecep:    { pass: "produksi123", role: "produksi" },
-  ujang:   { pass: "produksi123", role: "produksi" },
-  agus:    { pass: "produksi123", role: "produksi" },
-  riki:    { pass: "produksi123", role: "produksi" },
-  ade:     { pass: "produksi123", role: "produksi" },
-  deden:   { pass: "produksi123", role: "produksi" },
-  enjang:  { pass: "produksi123", role: "produksi" },
-  baaecep: { pass: "produksi123", role: "produksi" },
-  cana: { pass: "produksi123", role: "produksi" },
-  ucu: { pass: "produksi123", role: "produksi" },
-  dendi: { pass: "produksi123", role: "produksi" },
+  adi:     { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  ecep:    { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  ujang:   { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  agus:    { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  riki:    { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  ade:     { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  deden:   { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  enjang:  { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  baaecep: { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  cana:    { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  ucu:     { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  dendi:   { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  cutting: { pass: "Potong123",   role: "produksi", tim: "pola" },
   admin:   { pass: "admin123",    role: "admin" },
 };
 

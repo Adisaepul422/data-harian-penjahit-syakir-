@@ -338,20 +338,30 @@ function resetSlipList() {
 
 // Hitung baris barang (qty & subtotal per barang) untuk satu pekerja pada rentang tanggal.
 // Selalu mengembalikan SEMUA barang di HARGA_LUSIN (walau qty 0), sesuai format slip kertas asli.
-function hitungBarisSlip(dataPekerja, dari, sampai) {
+// Tentukan tim seorang pekerja: cek dari entri data mereka sendiri (paling akurat &
+// sesuai histori), fallback ke data USERS saat ini, fallback terakhir 'penjahit'.
+function getWorkerTim(username, nama) {
+  const entry = getData().find(d => (d.username || d.nama) === (username || nama) && d.tim);
+  if (entry) return entry.tim;
+  if (username && USERS[username] && USERS[username].tim) return USERS[username].tim;
+  return 'penjahit';
+}
+
+function hitungBarisSlip(dataPekerja, dari, sampai, tim) {
+  const daftarHarga = getDaftarHargaByTim(tim);
   const filtered = dataPekerja.filter(d => d.tanggal >= dari && d.tanggal <= sampai);
   const qtyByKey = {};
   const barangTanpaHarga = new Set();
   filtered.forEach(d => {
     const key = (d.barang || '').trim().toLowerCase();
-    if (!HARGA_LUSIN.hasOwnProperty(key)) { barangTanpaHarga.add(d.barang); return; }
+    if (!daftarHarga.hasOwnProperty(key)) { barangTanpaHarga.add(d.barang); return; }
     const lusinEq = toLusinEquivalent(d.jumlah, d.satuan || 'Lusin');
     qtyByKey[key] = (qtyByKey[key] || 0) + lusinEq;
   });
 
-  const rows = Object.keys(HARGA_LUSIN).map(key => {
+  const rows = Object.keys(daftarHarga).map(key => {
     const qty = qtyByKey[key] || 0;
-    const harga = HARGA_LUSIN[key];
+    const harga = daftarHarga[key];
     return { key, label: titleCase(key), harga, qty, subtotal: qty * harga };
   });
 
@@ -386,11 +396,14 @@ function tampilkanSlipList() {
 
   const daftarPekerja = Object.values(pekerjaMap).sort((a,b) => a.nama.localeCompare(b.nama, 'id'));
 
-  tbody.innerHTML = daftarPekerja.map(p => {
+  let grandTotal = 0;
+  const barisPekerja = daftarPekerja.map(p => {
     const dataPekerja = getData().filter(d => (d.username || d.nama) === (p.username || p.nama));
-    const { rows } = hitungBarisSlip(dataPekerja, dari, sampai);
+    const tim = getWorkerTim(p.username, p.nama);
+    const { rows } = hitungBarisSlip(dataPekerja, dari, sampai, tim);
     const totalQty = rows.reduce((a,r) => a + r.qty, 0);
     const totalRp  = rows.reduce((a,r) => a + r.subtotal, 0);
+    grandTotal += totalRp;
     return `
       <tr>
         <td><strong>${p.nama}</strong></td>
@@ -400,23 +413,41 @@ function tampilkanSlipList() {
         <td><button class="btn btn-accent" style="padding:6px 12px;font-size:12px;" onclick="bukaSlipModal('${(p.username||'').replace(/'/g,"\\'")}', '${p.nama.replace(/'/g,"\\'")}', '${dari}', '${sampai}')">🖨️ Cetak Slip</button></td>
       </tr>`;
   }).join('');
+
+  const barisTotal = `
+    <tr style="background:var(--brand-light);">
+      <td colspan="3" style="text-align:right;font-weight:800;">TOTAL KESELURUHAN</td>
+      <td colspan="2"><span class="badge badge-qty" style="font-size:13px;font-weight:800;">${formatRupiah(grandTotal)}</span></td>
+    </tr>`;
+
+  tbody.innerHTML = barisPekerja + barisTotal;
 }
 
 function bukaSlipModal(username, nama, dari, sampai) {
   const dataPekerja = getData().filter(d => (d.username || d.nama) === (username || nama));
-  const { rows, barangTanpaHarga } = hitungBarisSlip(dataPekerja, dari, sampai);
+  const tim = getWorkerTim(username, nama);
+  const { rows, barangTanpaHarga } = hitungBarisSlip(dataPekerja, dari, sampai, tim);
 
   const totalBarangQty = rows.reduce((a,r) => a + r.qty, 0);
   const totalBarangRp  = rows.reduce((a,r) => a + r.subtotal, 0);
 
   const periodeLabel = `${formatDate(dari)} - ${formatDate(sampai)}`;
+  const timLabel = tim === 'pola' ? 'Pola (Cutting)' : 'Penjahit';
 
-  const rowsHTML = rows.map(r => `
+  // Semua baris QTY & HPP dibuat jadi <input> supaya admin bisa mengedit
+  // langsung, dan Jumlah otomatis dihitung ulang saat diketik (lihat hitungTotalSlip).
+  const rowsHTML = rows.map((r, idx) => `
     <tr>
-      <td class="slip-center">${r.qty ? formatQty(r.qty) : ''}</td>
+      <td class="slip-center">
+        <input type="number" class="slip-row-qty" data-idx="${idx}" value="${formatQty(r.qty)}" min="0" step="0.5"
+               oninput="hitungTotalSlip()" style="width:44px;text-align:center;border:1px solid var(--border);border-radius:4px;padding:2px;">
+      </td>
       <td>${r.label}</td>
-      <td class="slip-center">${Math.round(r.harga/1000)}</td>
-      <td class="slip-right">${formatRupiah(r.subtotal)}</td>
+      <td class="slip-center">
+        <input type="number" class="slip-row-hpp" data-idx="${idx}" value="${Math.round(r.harga/1000)}" min="0"
+               oninput="hitungTotalSlip()" style="width:52px;text-align:center;border:1px solid var(--border);border-radius:4px;padding:2px;">
+      </td>
+      <td class="slip-right slip-row-jumlah" data-idx="${idx}">${formatRupiah(r.subtotal)}</td>
     </tr>`).join('');
 
   const peringatanHarga = barangTanpaHarga.length > 0
@@ -433,16 +464,16 @@ function bukaSlipModal(username, nama, dari, sampai) {
         <div><span class="lbl">Periode</span>: <strong>${periodeLabel}</strong></div>
         <div><span class="lbl">Alamat</span>: Jl. Anyar Bojong Kukun, Bandung 40382</div>
         <div><span class="lbl">Nama Karyawan</span>: <input type="text" id="slip-nama" value="${nama.toUpperCase()}"></div>
-        <div></div>
-        <div><span class="lbl">Jabatan</span>: <input type="text" id="slip-jabatan" value="PRODUKSI"></div>
+        <div><span class="lbl">Tim</span>: <strong>${timLabel}</strong></div>
+        <div><span class="lbl">Jabatan</span>: <input type="text" id="slip-jabatan" value="${tim === 'pola' ? 'POLA/CUTTING' : 'PRODUKSI'}"></div>
       </div>
 
       <table class="slip-table">
         <thead>
           <tr>
-            <th class="slip-center" style="width:34px;">Qty</th>
+            <th class="slip-center" style="width:44px;">Qty</th>
             <th>Nama Barang</th>
-            <th class="slip-center" style="width:50px;">HPP</th>
+            <th class="slip-center" style="width:56px;">HPP</th>
             <th class="slip-right" style="width:90px;">Jumlah</th>
           </tr>
         </thead>
@@ -457,12 +488,13 @@ function bukaSlipModal(username, nama, dari, sampai) {
         </tbody>
       </table>
 
+      <div class="no-print" style="font-size:10.5px;color:var(--muted);margin-top:4px;">💡 Qty & HPP di atas bisa diedit langsung kalau perlu koreksi — totalnya otomatis update. Data satuan Pcs otomatis dikonversi (1 Lusin = 12 Pcs).</div>
+
       <hr class="slip-divider">
       <div class="slip-total-row">
-        <span>Total Penghasilan (${formatQty(totalBarangQty)} Lusin)</span>
+        <span id="slip-total-penghasilan-label">Total Penghasilan (${formatQty(totalBarangQty)} Lusin)</span>
         <span id="slip-total-penghasilan">${formatRupiah(totalBarangRp)}</span>
       </div>
-      <div class="no-print" style="font-size:10.5px;color:var(--muted);margin-top:4px;">Data satuan Pcs otomatis dikonversi (1 Lusin = 12 Pcs).</div>
       ${peringatanHarga}
 
       <div class="slip-pengurangan">
@@ -494,15 +526,28 @@ function bukaSlipModal(username, nama, dari, sampai) {
     </div>
   `;
 
-  document.getElementById('slip-print-area').dataset.totalBarang = totalBarangRp;
   document.getElementById('slip-modal').style.display = 'flex';
   hitungTotalSlip();
 }
 
+// Hitung ulang SEMUA total di slip — dipanggil tiap kali admin mengedit
+// input apa pun di dalam slip (Qty, HPP, Lembur, atau Pengurangan).
 function hitungTotalSlip() {
   const area = document.getElementById('slip-print-area');
   if (!area) return;
-  const totalBarang = parseFloat(area.dataset.totalBarang) || 0;
+
+  let totalBarangQty = 0, totalBarang = 0;
+  area.querySelectorAll('.slip-row-qty').forEach(input => {
+    const idx = input.dataset.idx;
+    const qty = parseFloat(input.value) || 0;
+    const hppInput = area.querySelector(`.slip-row-hpp[data-idx="${idx}"]`);
+    const hpp = (parseFloat(hppInput.value) || 0) * 1000;
+    const jumlah = qty * hpp;
+    const jumlahCell = area.querySelector(`.slip-row-jumlah[data-idx="${idx}"]`);
+    if (jumlahCell) jumlahCell.textContent = formatRupiah(jumlah);
+    totalBarangQty += qty;
+    totalBarang += jumlah;
+  });
 
   const lemburQty  = parseFloat(document.getElementById('slip-lembur-qty').value) || 0;
   const lemburRate = parseFloat(document.getElementById('slip-lembur-rate').value) || 0;
@@ -511,6 +556,8 @@ function hitungTotalSlip() {
 
   const totalPenghasilan = totalBarang + lemburJumlah;
   document.getElementById('slip-total-penghasilan').textContent = formatRupiah(totalPenghasilan);
+  const labelEl = document.getElementById('slip-total-penghasilan-label');
+  if (labelEl) labelEl.textContent = `Total Penghasilan (${formatQty(totalBarangQty)} Lusin)`;
 
   const tabungan = parseFloat(document.getElementById('slip-tabungan').value) || 0;
   const koperasi = parseFloat(document.getElementById('slip-koperasi').value) || 0;
@@ -552,7 +599,7 @@ function renderAdminTable() {
   const empty    = document.getElementById('admin-empty');
 
   if (!dataLoaded) {
-    tbody.innerHTML = loadingStateHTML(9);
+    tbody.innerHTML = loadingStateHTML(10);
     empty.style.display = 'none';
     return;
   }
@@ -583,6 +630,7 @@ function renderAdminTable() {
       <td>${d.barang}</td>
       <td><span class="badge badge-color">${d.warna}</span></td>
       <td><span class="badge badge-qty">${d.jumlah} ${d.satuan || 'Lusin'}</span></td>
+      <td>${d.bahan ? `<span style="font-size:11px;color:var(--muted);">🧵 ${d.bahan}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
       <td>
         <button class="action-btn" onclick="bukaModalEdit('${d._docId}')" title="Edit">✏️</button>
         <button class="action-btn" onclick="hapusRowByIndex('${d._docId}')" title="Hapus">🗑️</button>
@@ -816,7 +864,8 @@ function exportExcel() {
     'Barang': d.barang,
     'Warna': d.warna,
     'Jumlah': d.jumlah,
-    'Satuan': d.satuan || 'Lusin'
+    'Satuan': d.satuan || 'Lusin',
+    'Bahan': d.bahan || ''
   }));
 
   const totalPerSatuan = {};
@@ -825,7 +874,7 @@ function exportExcel() {
     totalPerSatuan[s] = (totalPerSatuan[s] || 0) + d.jumlah;
   });
   Object.keys(totalPerSatuan).forEach(s => {
-    rows.push({ 'No': '', 'Tanggal': '', 'Waktu': '', 'Nama Pekerja': '', 'Username': '', 'Barang': '', 'Warna': `Total ${s}`, 'Jumlah': totalPerSatuan[s], 'Satuan': '' });
+    rows.push({ 'No': '', 'Tanggal': '', 'Waktu': '', 'Nama Pekerja': '', 'Username': '', 'Barang': '', 'Warna': `Total ${s}`, 'Jumlah': totalPerSatuan[s], 'Satuan': '', 'Bahan': '' });
   });
 
   const ws = XLSX.utils.json_to_sheet(rows);
