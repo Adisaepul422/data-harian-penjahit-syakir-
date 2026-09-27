@@ -22,7 +22,7 @@ const HARGA_LUSIN_PENJAHIT = {
   "ransel mini":        87000,
   "revana":             80000,
   "zaskia":             75000,
-  "dinara":             75000,
+  "dinara":             77000,
   "azzura":             75000,
   "ananda":             75000,
   "fairi":              75000,
