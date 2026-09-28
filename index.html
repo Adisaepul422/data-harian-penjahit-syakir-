@@ -23,6 +23,18 @@
     background: linear-gradient(180deg, rgba(15,47,122,0) 55%, rgba(15,47,122,0.6) 100%);
     pointer-events: none;
   }
+  /* HP (layar tegak): video aslinya landscape 16:9 dengan logo di tengah, jadi kalau dipaksa
+     'cover' sisi kiri-kanan logo terpotong. Di sini video dilebarkan dari tengah supaya
+     seluruh logo tampil utuh, dan latarnya putih sama seperti latar video. */
+  @media (orientation: portrait) {
+    html, body { background: #ffffff; }
+    .splash-video {
+      inset: auto; top: 50%; left: 50%;
+      width: 170vw; height: auto;
+      transform: translate(-50%, -50%);
+      object-fit: contain;
+    }
+  }
   .msg {
     position: fixed; left: 0; right: 0; bottom: 28px;
     text-align: center;
@@ -33,9 +45,9 @@
 </style>
 </head>
 <body>
-  <video class="splash-video" src="Loading_logo.mp4" autoplay muted playsinline></video>
+  <video class="splash-video" src="Scene-1.mp4" autoplay muted playsinline></video>
   <div class="splash-overlay"></div>
-  <p class="msg">HASTAG "NJUL KASEP"</p>
+  <p class="msg">HASTAG ENJUL KASEP</p>
 
   <script>
     var video = document.querySelector('.splash-video');
@@ -52,7 +64,7 @@
 
     // ...atau paling lambat setelah 4.5 detik, jaga-jaga kalau video gagal
     // dimuat/diputar (koneksi lambat, browser memblokir autoplay, dll).
-    setTimeout(pindahKeLogin, 1500);
+    setTimeout(pindahKeLogin, 4500);
   </script>
 </body>
 </html>
