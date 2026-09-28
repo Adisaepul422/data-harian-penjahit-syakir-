@@ -96,12 +96,28 @@ function checkNotifBanner() {
 // Timpa hook dari shared.js: refresh tampilan admin setiap data/barang berubah real-time
 onDataChanged = function () {
   renderAdminTable();
-  loadRekapPekerjaSelect();
   renderTanggalSummary();
+  renderStokMingguan();
+  // Rekap Totalan Barang & Slip Gaji ikut diperbarui otomatis kalau tabnya sedang terbuka & sudah ada rentang tanggal
+  if (document.getElementById('rekap-hasil') && document.getElementById('rekap-hasil').style.display !== 'none') tampilkanRekap();
+  if (document.getElementById('slip-list-wrap') && document.getElementById('slip-list-wrap').style.display !== 'none') tampilkanSlipList();
+  if (document.getElementById('stok-wrap') && document.getElementById('stok-wrap').style.display !== 'none') tampilkanStok();
+};
+
+// Timpa hook dari shared.js: refresh daftar slip gaji setiap ada potongan baru disimpan (real-time)
+onPotonganChanged = function () {
+  if (document.getElementById('slip-list-wrap') && document.getElementById('slip-list-wrap').style.display !== 'none') tampilkanSlipList();
 };
 onBarangChanged = function () {
   loadFilterBarangSelect();
   renderBarangTable();
+  loadStokTambahBarangSelect();
+  if (document.getElementById('stok-wrap') && document.getElementById('stok-wrap').style.display !== 'none') tampilkanStok();
+};
+
+// Timpa hook dari shared.js: refresh tabel Stok Barang setiap ada penyesuaian baru disimpan (real-time)
+onStokPenyesuaianChanged = function () {
+  if (document.getElementById('stok-wrap') && document.getElementById('stok-wrap').style.display !== 'none') tampilkanStok();
 };
 
 function initAdmin() {
@@ -113,10 +129,11 @@ function initAdmin() {
 
   loadFilterBarangSelect();
   loadFilterUsernameSelect();
-  loadRekapPekerjaSelect();
   renderAdminTable();
   renderBarangTable();
   renderTanggalSummary();
+  renderStokMingguan();
+  loadStokTambahBarangSelect();
 
   showAdminTab('data');
 }
@@ -130,6 +147,9 @@ function showAdminTab(tabId) {
 
   // Buka tab Data Produksi = admin dianggap sudah "mengecek" data baru
   if (tabId === 'data') clearNotifBadge();
+
+  // Buka tab Stok Barang = langsung tampilkan stok semua barang dari Kelola Barang
+  if (tabId === 'stok') tampilkanStok();
 
   // Scroll ke atas konten setiap ganti tab supaya tidak nyangkut di posisi scroll lama
   window.scrollTo({ top: document.querySelector('.admin-subnav').offsetTop - 56, behavior: 'smooth' });
@@ -207,27 +227,16 @@ function filterByTanggal(tgl) {
   toast(`Menampilkan data tanggal ${formatDate(tgl)}`, 'success');
 }
 
-function loadRekapPekerjaSelect() {
-  const sel = document.getElementById('rk-pekerja');
-  if (!sel) return;
-  const current = sel.value;
-  const names = [...new Set(getData().map(d => d.nama))].sort((a,b) => a.localeCompare(b, 'id'));
-  sel.innerHTML = '<option value="">-- Pilih Pekerja --</option>' +
-    '<option value="__ALL__">🔷 Semua Pekerja</option>' +
-    names.map(n => `<option value="${n}">${n}</option>`).join('');
-  sel.value = current;
-}
-
 function getRekapFiltered() {
   const dari    = document.getElementById('rk-dari').value;
   const sampai  = document.getElementById('rk-sampai').value;
-  const pekerja = document.getElementById('rk-pekerja').value;
 
+  // Rekap Totalan Barang selalu menggabungkan SEMUA pekerja/user — tidak difilter per orang,
+  // karena tujuannya melihat total keseluruhan input tim produksi pada suatu periode.
   let data = getData();
-  if (pekerja && pekerja !== '__ALL__') data = data.filter(d => d.nama === pekerja);
   if (dari)    data = data.filter(d => d.tanggal >= dari);
   if (sampai)  data = data.filter(d => d.tanggal <= sampai);
-  return { data, pekerja, dari, sampai };
+  return { data, dari, sampai };
 }
 
 function ringkasRekap(data) {
@@ -235,8 +244,9 @@ function ringkasRekap(data) {
   data.forEach(d => {
     const satuan = d.satuan || 'Lusin';
     const key = d.barang + '|' + d.warna + '|' + satuan;
-    if (!map[key]) map[key] = { barang: d.barang, warna: d.warna, satuan, jumlah: 0 };
-    map[key].jumlah += d.jumlah;
+    if (!map[key]) map[key] = { barang: d.barang, warna: d.warna, satuan, pola: 0, produksi: 0 };
+    if ((d.tim || 'penjahit') === 'pola') map[key].pola += d.jumlah;
+    else map[key].produksi += d.jumlah;
   });
   return Object.values(map).sort((a,b) =>
     a.barang.localeCompare(b.barang, 'id') || a.warna.localeCompare(b.warna, 'id') || a.satuan.localeCompare(b.satuan, 'id')
@@ -246,9 +256,8 @@ function ringkasRekap(data) {
 function tampilkanRekap() {
   const dari   = document.getElementById('rk-dari').value;
   const sampai = document.getElementById('rk-sampai').value;
-  const { data, pekerja } = getRekapFiltered();
+  const { data } = getRekapFiltered();
 
-  if (!pekerja) return toast('Pilih nama pekerja terlebih dahulu!', 'danger');
   if (dari && sampai && dari > sampai) return toast('Tanggal "Dari" tidak boleh lebih besar dari "Sampai"!', 'danger');
 
   const hasil = document.getElementById('rekap-hasil');
@@ -258,6 +267,7 @@ function tampilkanRekap() {
   if (data.length === 0) {
     hasil.style.display = 'none';
     empty.style.display = 'block';
+    document.getElementById('rekap-slip-pola').style.display = 'none';
     return;
   }
   empty.style.display = 'none';
@@ -265,36 +275,79 @@ function tampilkanRekap() {
 
   const rows = ringkasRekap(data);
 
-  const gabunganNote = document.getElementById('rekap-gabungan-note');
-  if (gabunganNote) gabunganNote.style.display = pekerja === '__ALL__' ? 'block' : 'none';
-
   tbody.innerHTML = rows.map(r => `
     <tr>
       <td><strong>${r.barang}</strong></td>
       <td><span class="badge badge-color">${r.warna}</span></td>
       <td>${r.satuan}</td>
-      <td><span class="badge badge-qty">${r.jumlah} ${r.satuan}</span></td>
+      <td>${r.pola > 0 ? `<span class="badge badge-user">${formatQty(r.pola)} ${r.satuan}</span>` : '—'}</td>
+      <td>${r.produksi > 0 ? `<span class="badge badge-qty">${formatQty(r.produksi)} ${r.satuan}</span>` : '—'}</td>
     </tr>
   `).join('');
 
-  // Total dihitung terpisah per satuan (Lusin & Pcs tidak bisa dijumlah jadi satu angka)
-  const totalPerSatuan = {};
-  rows.forEach(r => { totalPerSatuan[r.satuan] = (totalPerSatuan[r.satuan] || 0) + r.jumlah; });
-  const totalText = Object.keys(totalPerSatuan).map(s => `${totalPerSatuan[s]} ${s}`).join(' + ');
-  document.getElementById('rekap-total').textContent = totalText;
+  // Total dihitung terpisah per satuan (Lusin & Pcs tidak bisa dijumlah jadi satu angka), dan
+  // terpisah juga antara Tim Pola vs Tim Produksi supaya mudah dibaca admin.
+  const totalPola = {};
+  const totalProduksi = {};
+  rows.forEach(r => {
+    totalPola[r.satuan]     = (totalPola[r.satuan]     || 0) + r.pola;
+    totalProduksi[r.satuan] = (totalProduksi[r.satuan] || 0) + r.produksi;
+  });
+  const fmtTotal = obj => {
+    const parts = Object.keys(obj).filter(s => obj[s] > 0).map(s => `${formatQty(obj[s])} ${s}`);
+    return parts.length ? parts.join(' + ') : '0';
+  };
+  document.getElementById('rekap-total-pola').textContent = fmtTotal(totalPola);
+  document.getElementById('rekap-total-produksi').textContent = fmtTotal(totalProduksi);
+
+  renderSlipPolaRekap(dari, sampai);
+}
+
+// Panel "Gaji Tim Pola" langsung di dalam tab Rekap Totalan Barang — supaya admin tidak perlu
+// pindah ke tab Slip Gaji lagi untuk mencetak slip gaji tim pola.
+function renderSlipPolaRekap(dari, sampai) {
+  const wrap = document.getElementById('rekap-slip-pola');
+  const listEl = document.getElementById('rekap-slip-pola-list');
+  if (!wrap || !listEl) return;
+
+  if (!dari || !sampai) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  // Anggota tim pola (mis. "cutting") — gajinya = total Tim Produksi di atas.
+  const pekerjaPola = Object.keys(USERS)
+    .filter(uname => USERS[uname] && USERS[uname].tim === 'pola')
+    .map(uname => {
+      const contoh = getData().find(d => d.username === uname);
+      const nama = contoh ? contoh.nama : (uname.charAt(0).toUpperCase() + uname.slice(1));
+      return { username: uname, nama };
+    });
+
+  if (pekerjaPola.length === 0) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  wrap.style.display = 'block';
+  listEl.innerHTML = pekerjaPola.map(p => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;flex-wrap:wrap;">
+      <span style="font-weight:700;color:var(--brand);">${p.nama}</span>
+      <button class="btn btn-accent" style="padding:8px 16px;font-size:13px;" onclick="bukaSlipModal('${p.username.replace(/'/g,"\\'")}', '${p.nama.replace(/'/g,"\\'")}', '${dari}', '${sampai}')">🖨️ Cetak Slip Gaji</button>
+    </div>
+  `).join('');
 }
 
 function resetRekap() {
   document.getElementById('rk-dari').value = '';
   document.getElementById('rk-sampai').value = '';
-  document.getElementById('rk-pekerja').value = '';
   document.getElementById('rekap-hasil').style.display = 'none';
   document.getElementById('rekap-empty').style.display = 'none';
+  document.getElementById('rekap-slip-pola').style.display = 'none';
 }
 
 function exportRekapExcel() {
-  const { data, pekerja, dari, sampai } = getRekapFiltered();
-  if (!pekerja) return toast('Pilih nama pekerja terlebih dahulu!', 'danger');
+  const { data, dari, sampai } = getRekapFiltered();
   if (data.length === 0) return toast('Tidak ada data untuk diekspor!', 'danger');
 
   const ringkas = ringkasRekap(data);
@@ -302,17 +355,22 @@ function exportRekapExcel() {
     'Barang': r.barang,
     'Warna': r.warna,
     'Satuan': r.satuan,
-    'Jumlah': r.jumlah
+    'Tim Pola': r.pola,
+    'Tim Produksi': r.produksi
   }));
 
-  const totalPerSatuan = {};
-  ringkas.forEach(r => { totalPerSatuan[r.satuan] = (totalPerSatuan[r.satuan] || 0) + r.jumlah; });
-  Object.keys(totalPerSatuan).forEach(s => {
-    rows.push({ 'Barang': '', 'Warna': '', 'Satuan': `Total ${s}`, 'Jumlah': totalPerSatuan[s] });
+  const totalPola = {};
+  const totalProduksi = {};
+  ringkas.forEach(r => {
+    totalPola[r.satuan]     = (totalPola[r.satuan]     || 0) + r.pola;
+    totalProduksi[r.satuan] = (totalProduksi[r.satuan] || 0) + r.produksi;
+  });
+  Object.keys({ ...totalPola, ...totalProduksi }).forEach(s => {
+    rows.push({ 'Barang': '', 'Warna': '', 'Satuan': `Total ${s}`, 'Tim Pola': totalPola[s] || 0, 'Tim Produksi': totalProduksi[s] || 0 });
   });
 
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 12 }];
+  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Rekap');
@@ -321,8 +379,7 @@ function exportRekapExcel() {
                     : dari ? `dari-${dari}`
                     : sampai ? `sampai-${sampai}`
                     : 'semua-tanggal';
-  const pekerjaLabel = pekerja === '__ALL__' ? 'semua-pekerja' : pekerja;
-  XLSX.writeFile(wb, `rekap-${pekerjaLabel}-${rangeLabel}.xlsx`);
+  XLSX.writeFile(wb, `rekap-totalan-barang-${rangeLabel}.xlsx`);
   toast('Rekap berhasil diekspor! 📥', 'success');
 }
 
@@ -349,7 +406,15 @@ function getWorkerTim(username, nama) {
 
 function hitungBarisSlip(dataPekerja, dari, sampai, tim) {
   const daftarHarga = getDaftarHargaByTim(tim);
-  const filtered = dataPekerja.filter(d => d.tanggal >= dari && d.tanggal <= sampai);
+
+  // Tim POLA (cutting) digaji mengikuti TOTAL SELURUH pendapatan/hasil tim produksi
+  // (penjahit) pada periode yang sama — BUKAN dari input milik pola itu sendiri —
+  // karena pola menyiapkan potongan bahan untuk seluruh tim produksi.
+  const sumberData = tim === 'pola'
+    ? getData().filter(d => (d.tim || 'penjahit') !== 'pola')
+    : dataPekerja;
+
+  const filtered = sumberData.filter(d => d.tanggal >= dari && d.tanggal <= sampai);
   const qtyByKey = {};
   const barangTanpaHarga = new Set();
   filtered.forEach(d => {
@@ -394,6 +459,18 @@ function tampilkanSlipList() {
     if (!pekerjaMap[uname]) pekerjaMap[uname] = { username: d.username || '', nama: d.nama };
   });
 
+  // Anggota tim POLA (mis. "cutting") tetap wajib muncul di daftar slip meski mereka sendiri
+  // tidak input data pada periode ini — karena gaji pola dihitung dari TOTAL hasil seluruh
+  // tim produksi (penjahit), bukan dari input mereka sendiri.
+  Object.keys(USERS).forEach(uname => {
+    const u = USERS[uname];
+    if (u && u.tim === 'pola' && !pekerjaMap[uname]) {
+      const contoh = getData().find(d => d.username === uname);
+      const namaTampilan = contoh ? contoh.nama : (uname.charAt(0).toUpperCase() + uname.slice(1));
+      pekerjaMap[uname] = { username: uname, nama: namaTampilan };
+    }
+  });
+
   const daftarPekerja = Object.values(pekerjaMap).sort((a,b) => a.nama.localeCompare(b.nama, 'id'));
 
   let grandTotal = 0;
@@ -404,12 +481,15 @@ function tampilkanSlipList() {
     const totalQty = rows.reduce((a,r) => a + r.qty, 0);
     const totalRp  = rows.reduce((a,r) => a + r.subtotal, 0);
     grandTotal += totalRp;
+    const potongan = getPotongan(p.username || p.nama, dari, sampai);
+    const totalPotongan = potongan ? potongan.totalPotongan : 0;
     return `
       <tr>
         <td><strong>${p.nama}</strong></td>
         <td>${p.username ? `<span class="badge badge-user">${p.username}</span>` : '—'}</td>
         <td>${formatQty(totalQty)} Lsn</td>
         <td><span class="badge badge-qty">${formatRupiah(totalRp)}</span></td>
+        <td>${totalPotongan > 0 ? `<span class="badge badge-qty" style="background:var(--danger);color:#fff;">${formatRupiah(totalPotongan)}</span>` : '—'}</td>
         <td><button class="btn btn-accent" style="padding:6px 12px;font-size:12px;" onclick="bukaSlipModal('${(p.username||'').replace(/'/g,"\\'")}', '${p.nama.replace(/'/g,"\\'")}', '${dari}', '${sampai}')">🖨️ Cetak Slip</button></td>
       </tr>`;
   }).join('');
@@ -417,11 +497,14 @@ function tampilkanSlipList() {
   const barisTotal = `
     <tr style="background:var(--brand-light);">
       <td colspan="3" style="text-align:right;font-weight:800;">TOTAL KESELURUHAN</td>
-      <td colspan="2"><span class="badge badge-qty" style="font-size:13px;font-weight:800;">${formatRupiah(grandTotal)}</span></td>
+      <td colspan="3"><span class="badge badge-qty" style="font-size:13px;font-weight:800;">${formatRupiah(grandTotal)}</span></td>
     </tr>`;
 
   tbody.innerHTML = barisPekerja + barisTotal;
 }
+
+// Menyimpan konteks slip yang sedang dibuka (dipakai oleh simpanPotonganSlip, hitungTotalSlip)
+let currentSlipContext = null;
 
 function bukaSlipModal(username, nama, dari, sampai) {
   const dataPekerja = getData().filter(d => (d.username || d.nama) === (username || nama));
@@ -433,6 +516,15 @@ function bukaSlipModal(username, nama, dari, sampai) {
 
   const periodeLabel = `${formatDate(dari)} - ${formatDate(sampai)}`;
   const timLabel = tim === 'pola' ? 'Pola (Cutting)' : 'Penjahit';
+
+  currentSlipContext = { username, nama, dari, sampai };
+
+  // Kalau potongan untuk pekerja + periode ini sudah pernah disimpan sebelumnya, tampilkan nilai itu.
+  const potonganTersimpan = getPotongan(username || nama, dari, sampai);
+  const pgTabungan = potonganTersimpan ? potonganTersimpan.tabungan   : 0;
+  const pgKoperasi = potonganTersimpan ? potonganTersimpan.koperasi  : 0;
+  const pgLainKet  = potonganTersimpan ? potonganTersimpan.lainKet   : '';
+  const pgLain     = potonganTersimpan ? potonganTersimpan.lainNominal : 0;
 
   // Semua baris QTY & HPP dibuat jadi <input> supaya admin bisa mengedit
   // langsung, dan Jumlah otomatis dihitung ulang saat diketik (lihat hitungTotalSlip).
@@ -501,16 +593,17 @@ function bukaSlipModal(username, nama, dari, sampai) {
         <h4>Pengurangan</h4>
         <div class="slip-pengurangan-row">
           <label>Tabungan</label>
-          <input type="number" id="slip-tabungan" value="0" min="0" oninput="hitungTotalSlip()">
+          <input type="number" id="slip-tabungan" value="${pgTabungan}" min="0" oninput="hitungTotalSlip()">
         </div>
         <div class="slip-pengurangan-row">
           <label>Pinjaman Koperasi</label>
-          <input type="number" id="slip-koperasi" value="0" min="0" oninput="hitungTotalSlip()">
+          <input type="number" id="slip-koperasi" value="${pgKoperasi}" min="0" oninput="hitungTotalSlip()">
         </div>
         <div class="slip-pengurangan-row">
-          <label>Pinjaman Lainnya (<input type="text" id="slip-lain-ket" placeholder="keterangan" style="width:80px;display:inline;">)</label>
-          <input type="number" id="slip-lain-nominal" value="0" min="0" oninput="hitungTotalSlip()">
+          <label>Pinjaman Lainnya (<input type="text" id="slip-lain-ket" placeholder="keterangan" style="width:80px;display:inline;" value="${(pgLainKet||'').replace(/"/g,'&quot;')}">)</label>
+          <input type="number" id="slip-lain-nominal" value="${pgLain}" min="0" oninput="hitungTotalSlip()">
         </div>
+        <div class="no-print" id="slip-potongan-status" style="font-size:11px;color:var(--muted);margin-top:6px;">${potonganTersimpan ? '✅ Potongan tersimpan untuk periode ini.' : '⚠️ Potongan belum disimpan. Isi lalu klik "💾 Simpan Potongan" sebelum mencetak.'}</div>
         <div class="slip-total-row" style="font-size:12.5px;margin-top:4px;">
           <span>Total Pengurangan</span>
           <span id="slip-total-pengurangan" style="color:var(--danger)">Rp0</span>
@@ -571,10 +664,39 @@ function hitungTotalSlip() {
 
 function tutupSlipModal() {
   document.getElementById('slip-modal').style.display = 'none';
+  currentSlipContext = null;
 }
 
 function cetakSlip() {
   window.print();
+}
+
+// Simpan potongan (Tabungan, Pinjaman Koperasi, Pinjaman Lainnya) untuk pekerja + periode
+// yang sedang dibuka di modal slip. Setelah tersimpan, angkanya langsung muncul di kolom
+// "Total Potongan" pada daftar Slip Gaji.
+async function simpanPotonganSlip() {
+  if (!currentSlipContext) return;
+  const { username, nama, dari, sampai } = currentSlipContext;
+
+  const tabungan = parseFloat(document.getElementById('slip-tabungan').value) || 0;
+  const koperasi = parseFloat(document.getElementById('slip-koperasi').value) || 0;
+  const lainKet  = document.getElementById('slip-lain-ket').value.trim();
+  const lain     = parseFloat(document.getElementById('slip-lain-nominal').value) || 0;
+
+  const btn = document.getElementById('btn-simpan-potongan');
+  if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
+
+  try {
+    await savePotongan(username || nama, nama, dari, sampai, tabungan, koperasi, lainKet, lain);
+    toast('Potongan berhasil disimpan! 💾', 'success');
+    const status = document.getElementById('slip-potongan-status');
+    if (status) status.textContent = '✅ Potongan tersimpan untuk periode ini.';
+  } catch (e) {
+    console.error(e);
+    toast('Gagal menyimpan potongan. Cek koneksi internet!', 'danger');
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = '💾 Simpan Potongan'; }
 }
 
 function getFiltered() {
@@ -887,6 +1009,314 @@ function exportExcel() {
 
   XLSX.writeFile(wb, `data-produksi-${todayStr()}.xlsx`);
   toast('File Excel (.xlsx) berhasil diunduh! 📥', 'success');
+}
+
+/* ═══════════════════════════════
+   STOK BARANG (Admin)
+   Membandingkan hasil input tim POLA (barang yang sudah dipotong / siap jahit)
+   dengan hasil input tim PRODUKSI/PENJAHIT (barang yang sudah selesai dijahit),
+   per Barang + Warna, pada rentang tanggal tertentu.
+═══════════════════════════════ */
+function hitungStokBarang(dari, sampai) {
+  let data = getData();
+  if (dari)   data = data.filter(d => d.tanggal >= dari);
+  if (sampai) data = data.filter(d => d.tanggal <= sampai);
+
+  const map = {}; // key: barang|warna → { barang, warna, pola, produksi }
+  data.forEach(d => {
+    const key = d.barang + '|' + d.warna;
+    if (!map[key]) map[key] = { barang: d.barang, warna: d.warna, pola: 0, produksi: 0 };
+    const lusinEq = toLusinEquivalent(d.jumlah, d.satuan || 'Lusin');
+    if ((d.tim || 'penjahit') === 'pola') map[key].pola += lusinEq;
+    else map[key].produksi += lusinEq;
+  });
+
+  // Gabungkan dengan penyesuaian manual admin: baik untuk mengoreksi angka
+  // yang salah maupun untuk memunculkan barang yang ditambahkan admin sendiri
+  // walau belum ada data produksinya sama sekali.
+  const penyesuaianMap = getStokPenyesuaian();
+  Object.values(penyesuaianMap).forEach(p => {
+    const key = p.barang + '|' + p.warna;
+    if (!map[key]) map[key] = { barang: p.barang, warna: p.warna, pola: 0, produksi: 0 };
+  });
+
+  // Semua barang & warna dari Kelola Barang otomatis masuk daftar stok
+  // (walau belum ada data produksinya, tampil dengan angka 0 / HABIS).
+  getBarang().forEach(b => {
+    (b.warna || []).forEach(w => {
+      const key = b.nama + '|' + w;
+      if (!map[key]) map[key] = { barang: b.nama, warna: w, pola: 0, produksi: 0 };
+    });
+  });
+
+  // Urutan mengikuti urutan di Kelola Barang (barang yang sudah tidak ada di sana taruh paling bawah)
+  const urutan = getBarang().map(b => b.nama);
+  const idx = nama => { const i = urutan.indexOf(nama); return i === -1 ? 9999 : i; };
+  const idxW = r => { const b = getBarang().find(x => x.nama === r.barang); const i = b ? (b.warna || []).indexOf(r.warna) : -1; return i === -1 ? 9999 : i; };
+
+  return Object.values(map)
+    .map(r => {
+      const pDoc = penyesuaianMap[stokPenyesuaianDocId(r.barang, r.warna)];
+      const penyesuaian = pDoc ? (pDoc.penyesuaian || 0) : 0;
+      return { ...r, penyesuaian, sisa: r.pola - r.produksi + penyesuaian };
+    })
+    .sort((a,b) => idx(a.barang) - idx(b.barang) || a.barang.localeCompare(b.barang, 'id') || idxW(a) - idxW(b));
+}
+
+function resetStok() {
+  document.getElementById('sb-dari').value = '';
+  document.getElementById('sb-sampai').value = '';
+  document.getElementById('stok-wrap').style.display = 'none';
+  document.getElementById('stok-empty').style.display = 'none';
+}
+
+function tampilkanStok() {
+  const dari   = document.getElementById('sb-dari').value;
+  const sampai = document.getElementById('sb-sampai').value;
+  if (dari && sampai && dari > sampai) return toast('Tanggal "Dari" tidak boleh lebih besar dari "Sampai"!', 'danger');
+
+  const rows  = hitungStokBarang(dari, sampai);
+  const wrap  = document.getElementById('stok-wrap');
+  const empty = document.getElementById('stok-empty');
+  const tbody = document.getElementById('stok-tbody');
+
+  if (rows.length === 0) {
+    wrap.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  wrap.style.display = 'block';
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td><strong>${r.barang}</strong></td>
+      <td><span class="badge badge-color">${r.warna}</span></td>
+      <td>${formatQty(r.pola)} Lsn</td>
+      <td>${formatQty(r.produksi)} Lsn</td>
+      <td><span class="badge badge-qty" style="${r.sisa < 0 ? 'background:var(--danger);color:#fff;' : ''}">${formatQty(r.sisa)} Lsn</span>${r.penyesuaian ? ` <span style="font-size:11px;color:var(--muted);">(disesuaikan)</span>` : ''}</td>
+      <td><button class="action-btn" onclick="bukaModalEditStok('${r.barang.replace(/'/g, "\\'")}', '${r.warna.replace(/'/g, "\\'")}')" title="Edit Sisa Stok">✏️</button></td>
+    </tr>
+  `).join('');
+
+  renderUpdateStokText(rows);
+}
+
+/* ── Rekap per minggu: masuk (tim pola) vs keluar (tim produksi) ── */
+function renderStokMingguan() {
+  const tbody = document.getElementById('stok-minggu-tbody');
+  const empty = document.getElementById('stok-minggu-empty');
+  if (!tbody) return;
+
+  if (!dataLoaded) {
+    tbody.innerHTML = loadingStateHTML(4);
+    empty.style.display = 'none';
+    return;
+  }
+
+  const all = getData();
+  if (all.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const map = {}; // key: tanggal Senin → { pola, produksi } dalam Lusin
+  all.forEach(d => {
+    const monday = getMondayOf(d.tanggal);
+    if (!map[monday]) map[monday] = { pola: 0, produksi: 0 };
+    const lusinEq = toLusinEquivalent(d.jumlah, d.satuan || 'Lusin');
+    if ((d.tim || 'penjahit') === 'pola') map[monday].pola += lusinEq;
+    else map[monday].produksi += lusinEq;
+  });
+
+  const mondayNow = getMondayOf(todayStr());
+  const mingguList = Object.keys(map).sort((a,b) => b.localeCompare(a));
+
+  tbody.innerHTML = mingguList.map(monday => {
+    const sunday = addDaysStr(monday, 6);
+    const m = map[monday];
+    const selisih = m.pola - m.produksi;
+    return `
+    <tr class="tgl-row" onclick="pilihMingguStok('${monday}')">
+      <td><strong>${formatDate(monday)} - ${formatDate(sunday)}</strong>${monday === mondayNow ? ' <span class="badge badge-qty">Minggu Ini</span>' : ''}</td>
+      <td><span class="badge badge-qty">${formatQty(m.pola)} Lsn</span></td>
+      <td><span class="badge badge-qty">${formatQty(m.produksi)} Lsn</span></td>
+      <td><span class="badge badge-qty" style="${selisih < 0 ? 'background:var(--danger);color:#fff;' : ''}">${formatQty(selisih)} Lsn</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function pilihMingguStok(monday) {
+  document.getElementById('sb-dari').value   = monday;
+  document.getElementById('sb-sampai').value = addDaysStr(monday, 6);
+  tampilkanStok();
+  document.getElementById('stok-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ── Teks "UPDATE POLA PRODUKSI TERAKHIR" untuk dibagikan ke grup ── */
+function buatTeksUpdateStok(rows) {
+  const grup = {};
+  rows.forEach(r => {
+    if (!grup[r.barang]) grup[r.barang] = [];
+    grup[r.barang].push(r);
+  });
+
+  const blok = Object.keys(grup).map(barang => {
+    const baris = grup[barang].map(r =>
+      r.sisa > 0 ? `• ${r.warna} ${formatQty(r.sisa)} lsn` : `• ${r.warna} HABIS`
+    );
+    return `${barang.toUpperCase()}\n${baris.join('\n')}`;
+  });
+
+  return `UPDATE POLA PRODUKSI TERAKHIR\n\n${blok.join('\n\n')}`;
+}
+
+function renderUpdateStokText(rows) {
+  const el = document.getElementById('stok-update-text');
+  if (el) el.value = buatTeksUpdateStok(rows);
+}
+
+async function salinUpdateStok() {
+  const el = document.getElementById('stok-update-text');
+  try {
+    await navigator.clipboard.writeText(el.value);
+  } catch (e) {
+    el.select();
+    document.execCommand('copy');
+  }
+  toast('Teks update stok berhasil disalin! 📋', 'success');
+}
+
+function bagikanUpdateStokWA() {
+  const teks = document.getElementById('stok-update-text').value;
+  window.open('https://wa.me/?text=' + encodeURIComponent(teks), '_blank');
+}
+
+/* ── Tambah barang baru ke daftar Stok Barang (dari daftar Kelola Barang) ── */
+function loadStokTambahBarangSelect() {
+  const selBarang = document.getElementById('sb-tambah-barang');
+  if (!selBarang) return;
+  selBarang.innerHTML = '<option value="">-- Pilih Barang --</option>' +
+    getBarang().map(b => `<option value="${b.nama}">${b.nama}</option>`).join('');
+  document.getElementById('sb-tambah-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
+}
+
+function loadStokTambahWarnaSelect() {
+  const namaBarang = document.getElementById('sb-tambah-barang').value;
+  const selWarna   = document.getElementById('sb-tambah-warna');
+  const found = getBarang().find(b => b.nama === namaBarang);
+  selWarna.innerHTML = '<option value="">-- Pilih Warna --</option>' +
+    (found ? found.warna.map(w => `<option value="${w}">${w}</option>`).join('') : '');
+}
+
+async function tambahBarangStok() {
+  const barang = document.getElementById('sb-tambah-barang').value;
+  const warna  = document.getElementById('sb-tambah-warna').value;
+  if (!barang) return toast('Pilih barang terlebih dahulu!', 'danger');
+  if (!warna)  return toast('Pilih warna terlebih dahulu!', 'danger');
+
+  const rows = hitungStokBarang(document.getElementById('sb-dari').value, document.getElementById('sb-sampai').value);
+  if (rows.find(r => r.barang === barang && r.warna === warna)) {
+    return toast('Barang & warna ini sudah ada di daftar Stok Barang.', 'danger');
+  }
+
+  const btn = document.getElementById('sb-tambah-btn');
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner spinner-dark"></span>Menambahkan...';
+
+  try {
+    await saveStokPenyesuaian(barang, warna, 0);
+  } catch (e) {
+    console.error(e);
+    btn.disabled = false; btn.innerHTML = orig;
+    return toast('Gagal menambahkan barang. Cek koneksi internet!', 'danger');
+  }
+
+  btn.disabled = false; btn.innerHTML = orig;
+  document.getElementById('sb-tambah-barang').value = '';
+  document.getElementById('sb-tambah-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
+  toast('Barang berhasil ditambahkan ke daftar Stok Barang! ✅', 'success');
+  tampilkanStok();
+}
+
+/* ── Edit angka Sisa Stok (koreksi manual oleh admin) ── */
+function bukaModalEditStok(barang, warna) {
+  const rows = hitungStokBarang(document.getElementById('sb-dari').value, document.getElementById('sb-sampai').value);
+  const row = rows.find(r => r.barang === barang && r.warna === warna);
+  if (!row) return toast('Barang tidak ditemukan di tabel Stok Barang!', 'danger');
+
+  document.getElementById('es-barang-label').textContent = barang;
+  document.getElementById('es-warna-label').textContent  = warna;
+  document.getElementById('es-barang-key').value = barang;
+  document.getElementById('es-warna-key').value  = warna;
+  document.getElementById('es-nilai').value = formatQty(row.sisa);
+  document.getElementById('stok-edit-modal').style.display = 'flex';
+}
+
+function tutupModalEditStok() {
+  document.getElementById('stok-edit-modal').style.display = 'none';
+}
+
+async function simpanEditStok() {
+  const barang = document.getElementById('es-barang-key').value;
+  const warna  = document.getElementById('es-warna-key').value;
+  const nilaiBaru = parseFloat(document.getElementById('es-nilai').value);
+  if (isNaN(nilaiBaru)) return toast('Nilai Sisa Stok tidak valid!', 'danger');
+
+  // Penyesuaian dihitung ulang dari basis (Dipotong - Dikerjakan) rentang tanggal
+  // yang sedang ditampilkan, supaya angka Sisa Stok yang tampil persis sesuai
+  // yang dimasukkan admin.
+  const rows = hitungStokBarang(document.getElementById('sb-dari').value, document.getElementById('sb-sampai').value);
+  const row = rows.find(r => r.barang === barang && r.warna === warna);
+  const basis = row ? (row.pola - row.produksi) : 0;
+  const penyesuaianBaru = nilaiBaru - basis;
+
+  const btn = document.getElementById('btn-simpan-edit-stok');
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner spinner-dark"></span>Menyimpan...';
+
+  try {
+    await saveStokPenyesuaian(barang, warna, penyesuaianBaru);
+  } catch (e) {
+    console.error(e);
+    btn.disabled = false; btn.innerHTML = orig;
+    return toast('Gagal menyimpan. Cek koneksi internet!', 'danger');
+  }
+
+  btn.disabled = false; btn.innerHTML = orig;
+  toast('Sisa Stok berhasil diperbarui! ✅', 'success');
+  tutupModalEditStok();
+  tampilkanStok();
+}
+
+function exportStokExcel() {
+  const dari   = document.getElementById('sb-dari').value;
+  const sampai = document.getElementById('sb-sampai').value;
+  const rows = hitungStokBarang(dari, sampai);
+  if (rows.length === 0) return toast('Tidak ada data untuk diekspor!', 'danger');
+
+  const sheetRows = rows.map(r => ({
+    'Barang': r.barang,
+    'Warna': r.warna,
+    'Dipotong Tim Pola (Lusin)': formatQty(r.pola),
+    'Dikerjakan Tim Produksi (Lusin)': formatQty(r.produksi),
+    'Sisa Stok (Lusin)': formatQty(r.sisa)
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(sheetRows);
+  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 22 }, { wch: 16 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Stok Barang');
+
+  const rangeLabel = dari && sampai ? `${dari}_sd_${sampai}`
+                    : dari ? `dari-${dari}`
+                    : sampai ? `sampai-${sampai}`
+                    : 'semua-tanggal';
+  XLSX.writeFile(wb, `stok-barang-${rangeLabel}.xlsx`);
+  toast('Stok Barang berhasil diekspor! 📥', 'success');
 }
 
 document.addEventListener('DOMContentLoaded', () => {

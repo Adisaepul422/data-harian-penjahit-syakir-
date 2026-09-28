@@ -4,22 +4,55 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sistem Produksi syakirFamilia</title>
-<!-- Fallback kalau JavaScript nonaktif (sangat jarang terjadi) -->
-<meta http-equiv="refresh" content="0; url=login.html">
+<!-- Fallback kalau JavaScript nonaktif (sangat jarang terjadi): tetap lanjut ke login setelah beberapa detik -->
+<meta http-equiv="refresh" content="5; url=login.html">
 <style>
-  body {
-    margin: 0; min-height: 100vh;
-    display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(135deg, #1a56db 0%, #1341a8 50%, #0f2f7a 100%);
+  html, body {
+    margin: 0; height: 100%; width: 100%;
+    background: #0d1e40;
     font-family: 'Inter', sans-serif;
+    overflow: hidden;
   }
-  .msg { color: #fff; font-size: 14px; opacity: .85; }
+  .splash-video {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .splash-overlay {
+    position: fixed; inset: 0;
+    background: linear-gradient(180deg, rgba(15,47,122,0) 55%, rgba(15,47,122,0.6) 100%);
+    pointer-events: none;
+  }
+  .msg {
+    position: fixed; left: 0; right: 0; bottom: 28px;
+    text-align: center;
+    color: #fff; font-size: 14px; opacity: .9;
+    letter-spacing: .5px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.4);
+  }
 </style>
 </head>
 <body>
-  <p class="msg">ANTOSAN SADETIK</p>
+  <video class="splash-video" src="Loading_logo.mp4" autoplay muted playsinline></video>
+  <div class="splash-overlay"></div>
+  <p class="msg">HASTAG "NJUL KASEP"</p>
+
   <script>
-    window.location.replace('login.html');
+    var video = document.querySelector('.splash-video');
+    var sudahPindah = false;
+
+    function pindahKeLogin() {
+      if (sudahPindah) return;
+      sudahPindah = true;
+      window.location.replace('login.html');
+    }
+
+    // Lanjut ke halaman login begitu video selesai diputar...
+    video.addEventListener('ended', pindahKeLogin);
+
+    // ...atau paling lambat setelah 4.5 detik, jaga-jaga kalau video gagal
+    // dimuat/diputar (koneksi lambat, browser memblokir autoplay, dll).
+    setTimeout(pindahKeLogin, 1500);
   </script>
 </body>
 </html>

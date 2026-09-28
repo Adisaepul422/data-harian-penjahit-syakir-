@@ -89,6 +89,18 @@ function titleCase(s) {
   return (s || '').replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1));
 }
 
+// Ubah objek Date jadi teks "YYYY-MM-DD" berdasarkan tanggal LOKAL (bukan UTC).
+// PENTING: jangan pakai d.toISOString().slice(0,10) untuk ini — toISOString()
+// selalu mengonversi ke UTC, dan karena Indonesia UTC+7, itu bikin tanggalnya
+// mundur 1 hari (misalnya Sabtu bisa kebaca sebagai Jumat). Bug ini dulu bikin
+// "Pendapatan Minggu Ini" di halaman Tim Produksi tidak ikut menghitung hari Sabtu.
+function dateToLocalStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Tanggal SENIN (awal minggu) dari sebuah tanggal (default: hari ini).
 // Dipakai supaya "pendapatan minggu ini" otomatis mulai dari 0 tiap Senin baru,
 // tanpa perlu menghapus data apa pun — cuma soal rentang tanggal yang dihitung.
@@ -97,12 +109,12 @@ function getMondayOf(dateStr) {
   const day = d.getDay(); // 0=Minggu, 1=Senin, ... 6=Sabtu
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return dateToLocalStr(d);
 }
 function addDaysStr(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return dateToLocalStr(d);
 }
 
 const BARANG_DEFAULT = [
@@ -236,6 +248,55 @@ document.addEventListener('DOMContentLoaded', updateConnBadge);
 function onDataChanged() {}
 function onBarangChanged() {}
 
+/* ═══════════════════════════════
+   POTONGAN SLIP GAJI (tabungan, pinjaman koperasi, pinjaman lainnya)
+   Disimpan per (pekerja + periode tanggal) supaya "Total Potongan" di
+   daftar Slip Gaji tetap muncul walau admin membuka tab lain / login ulang.
+═══════════════════════════════ */
+let cachedPotongan  = {};   // key: docId → { username, nama, dari, sampai, tabungan, koperasi, lainKet, lainNominal, totalPotongan }
+let potonganLoaded  = false;
+
+db.collection('potongan_slip').onSnapshot(snap => {
+  const map = {};
+  snap.docs.forEach(doc => { map[doc.id] = doc.data(); });
+  cachedPotongan = map;
+  potonganLoaded = true;
+  onPotonganChanged();
+}, err => {
+  console.error(err);
+});
+
+// Hook — ditimpa oleh admin.js supaya tabel Slip Gaji auto-refresh saat potongan berubah
+function onPotonganChanged() {}
+
+function potonganDocId(usernameOrNama, dari, sampai) {
+  const safe = (usernameOrNama || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  return `${safe}__${dari}__${sampai}`;
+}
+
+// Ambil data potongan tersimpan untuk pekerja + periode tertentu. null kalau belum pernah disimpan.
+function getPotongan(usernameOrNama, dari, sampai) {
+  return cachedPotongan[potonganDocId(usernameOrNama, dari, sampai)] || null;
+}
+
+// Simpan potongan (dipanggil admin setelah mengisi Tabungan/Koperasi/Pinjaman Lainnya di slip).
+async function savePotongan(usernameOrNama, nama, dari, sampai, tabungan, koperasi, lainKet, lainNominal) {
+  const totalPotongan = (tabungan || 0) + (koperasi || 0) + (lainNominal || 0);
+  const id = potonganDocId(usernameOrNama, dari, sampai);
+  await db.collection('potongan_slip').doc(id).set({
+    username: usernameOrNama || '',
+    nama: nama || '',
+    dari, sampai,
+    tabungan: tabungan || 0,
+    koperasi: koperasi || 0,
+    lainKet: lainKet || '',
+    lainNominal: lainNominal || 0,
+    totalPotongan,
+    updatedAt: Date.now()
+  });
+  return totalPotongan;
+}
+
 function getBarang() {
   return cachedBarang;
 }
@@ -244,6 +305,52 @@ function saveBarang(list) {
 }
 function getData() {
   return cachedData;
+}
+
+/* ═══════════════════════════════
+   PENYESUAIAN STOK BARANG
+   Supaya admin bisa mengoreksi angka Stok Barang kalau ada kesalahan input
+   dari tim pola/produksi, dan juga menambahkan barang ke daftar Stok Barang
+   walau belum ada data produksinya sama sekali.
+   Disimpan per (barang + warna) sebagai angka penyesuaian (boleh +/-) dalam
+   satuan Lusin, yang nanti ditambahkan ke hasil hitungan otomatis
+   (Dipotong Tim Pola - Dikerjakan Tim Produksi) di admin.js.
+═══════════════════════════════ */
+let cachedStokPenyesuaian = {};   // key: docId → { barang, warna, penyesuaian, updatedAt }
+let stokPenyesuaianLoaded = false;
+
+db.collection('stok_penyesuaian').onSnapshot(snap => {
+  const map = {};
+  snap.docs.forEach(doc => { map[doc.id] = doc.data(); });
+  cachedStokPenyesuaian = map;
+  stokPenyesuaianLoaded = true;
+  onStokPenyesuaianChanged();
+}, err => {
+  console.error(err);
+});
+
+// Hook — ditimpa oleh admin.js supaya tabel Stok Barang auto-refresh saat penyesuaian berubah
+function onStokPenyesuaianChanged() {}
+
+function stokPenyesuaianDocId(barang, warna) {
+  const safe = s => (s || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  return `${safe(barang)}__${safe(warna)}`;
+}
+
+function getStokPenyesuaian() {
+  return cachedStokPenyesuaian;
+}
+
+// Simpan/ubah nilai penyesuaian (Lusin) untuk kombinasi barang+warna tertentu.
+// Dipakai baik untuk mengoreksi angka Stok Barang, maupun untuk menambahkan
+// baris barang baru ke tabel Stok Barang (dengan penyesuaian awal = jumlah stok awal).
+async function saveStokPenyesuaian(barang, warna, penyesuaian) {
+  const id = stokPenyesuaianDocId(barang, warna);
+  await db.collection('stok_penyesuaian').doc(id).set({
+    barang, warna,
+    penyesuaian: penyesuaian || 0,
+    updatedAt: Date.now()
+  });
 }
 
 const USERS = {
@@ -289,7 +396,7 @@ function doLogout() {
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0,10);
+  return dateToLocalStr(new Date());
 }
 function nowStr() {
   return new Date().toLocaleTimeString('id-ID', {hour:'2-digit',minute:'2-digit'});
