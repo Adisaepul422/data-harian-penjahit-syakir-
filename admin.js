@@ -1231,7 +1231,10 @@ async function tambahBarangStok() {
   } catch (e) {
     console.error(e);
     btn.disabled = false; btn.innerHTML = orig;
-    return toast('Gagal menambahkan barang. Cek koneksi internet!', 'danger');
+    const pesan = (e && e.code === 'permission-denied')
+      ? 'Gagal menambahkan barang: akses database ditolak (bukan soal koneksi internet). Minta developer menambahkan izin akses koleksi "stok_penyesuaian" di Firestore Rules.'
+      : 'Gagal menambahkan barang. Cek koneksi internet!';
+    return toast(pesan, 'danger');
   }
 
   btn.disabled = false; btn.innerHTML = orig;
@@ -1282,7 +1285,10 @@ async function simpanEditStok() {
   } catch (e) {
     console.error(e);
     btn.disabled = false; btn.innerHTML = orig;
-    return toast('Gagal menyimpan. Cek koneksi internet!', 'danger');
+    const pesan = (e && e.code === 'permission-denied')
+      ? 'Gagal menyimpan: akses database ditolak (bukan soal koneksi internet). Minta developer menambahkan izin akses koleksi "stok_penyesuaian" di Firestore Rules.'
+      : 'Gagal menyimpan. Cek koneksi internet!';
+    return toast(pesan, 'danger');
   }
 
   btn.disabled = false; btn.innerHTML = orig;
