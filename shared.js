@@ -353,6 +353,13 @@ async function saveStokPenyesuaian(barang, warna, penyesuaian) {
   });
 }
 
+// Hapus penyesuaian manual untuk kombinasi barang+warna tertentu (dipakai saat admin
+// menghapus baris dari daftar Stok Barang).
+async function deleteStokPenyesuaian(barang, warna) {
+  const id = stokPenyesuaianDocId(barang, warna);
+  await db.collection('stok_penyesuaian').doc(id).delete();
+}
+
 const USERS = {
   adi:     { pass: "produksi123", role: "produksi", tim: "penjahit" },
   ecep:    { pass: "produksi123", role: "produksi", tim: "penjahit" },

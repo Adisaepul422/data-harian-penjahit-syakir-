@@ -1095,7 +1095,10 @@ function tampilkanStok() {
       <td>${formatQty(r.pola)} Lsn</td>
       <td>${formatQty(r.produksi)} Lsn</td>
       <td><span class="badge badge-qty" style="${r.sisa < 0 ? 'background:var(--danger);color:#fff;' : ''}">${formatQty(r.sisa)} Lsn</span>${r.penyesuaian ? ` <span style="font-size:11px;color:var(--muted);">(disesuaikan)</span>` : ''}</td>
-      <td><button class="action-btn" onclick="bukaModalEditStok('${r.barang.replace(/'/g, "\\'")}', '${r.warna.replace(/'/g, "\\'")}')" title="Edit Sisa Stok">✏️</button></td>
+      <td>
+        <button class="action-btn" onclick="bukaModalEditStok('${r.barang.replace(/'/g, "\\'")}', '${r.warna.replace(/'/g, "\\'")}')" title="Edit Sisa Stok">✏️</button>
+        <button class="action-btn" onclick="hapusBarisStok('${r.barang.replace(/'/g, "\\'")}', '${r.warna.replace(/'/g, "\\'")}')" title="Hapus dari Daftar Stok">🗑️</button>
+      </td>
     </tr>
   `).join('');
 
@@ -1241,6 +1244,43 @@ async function tambahBarangStok() {
   document.getElementById('sb-tambah-barang').value = '';
   document.getElementById('sb-tambah-warna').innerHTML = '<option value="">-- Pilih Warna --</option>';
   toast('Barang berhasil ditambahkan ke daftar Stok Barang! ✅', 'success');
+  tampilkanStok();
+}
+
+/* ── Hapus baris dari daftar Stok Barang ── */
+// Membersihkan 2 sumber yang bisa memunculkan baris ini: (1) warna terdaftar di
+// Kelola Barang, dan (2) penyesuaian manual admin. Kalau ternyata masih ada data
+// produksi ASLI untuk kombinasi ini (dari input harian tim pola/produksi), baris
+// akan tetap/kembali muncul — admin perlu hapus juga data itu di tab Data Produksi.
+async function hapusBarisStok(barang, warna) {
+  const rows = hitungStokBarang(document.getElementById('sb-dari').value, document.getElementById('sb-sampai').value);
+  const row = rows.find(r => r.barang === barang && r.warna === warna);
+  const adaDataAsli = row && (row.pola !== 0 || row.produksi !== 0);
+
+  const konfirmasi = adaDataAsli
+    ? `"${barang} - ${warna}" masih punya data produksi asli (Masuk ${formatQty(row.pola)} Lsn, Keluar ${formatQty(row.produksi)} Lsn). Kalau dihapus dari daftar Kelola Barang, baris ini kemungkinan akan muncul lagi selama data itu masih ada. Lanjutkan hapus?`
+    : `Hapus "${barang} - ${warna}" dari daftar Stok Barang?`;
+  if (!confirm(konfirmasi)) return;
+
+  try {
+    // 1) Hapus warna ini dari Kelola Barang (kalau terdaftar di sana)
+    const list = getBarang();
+    const bIndex = list.findIndex(b => b.nama === barang);
+    if (bIndex > -1 && (list[bIndex].warna || []).includes(warna)) {
+      const listBaru = list.map((b, i) => i !== bIndex ? b : { ...b, warna: b.warna.filter(w => w !== warna) });
+      await saveBarang(listBaru);
+    }
+    // 2) Hapus penyesuaian manual untuk kombinasi ini (kalau ada)
+    await deleteStokPenyesuaian(barang, warna);
+  } catch (e) {
+    console.error(e);
+    const pesan = (e && e.code === 'permission-denied')
+      ? 'Gagal menghapus: akses database ditolak (bukan soal koneksi internet).'
+      : 'Gagal menghapus. Cek koneksi internet!';
+    return toast(pesan, 'danger');
+  }
+
+  toast('Baris berhasil dihapus dari daftar Stok Barang! ✅', 'success');
   tampilkanStok();
 }
 
