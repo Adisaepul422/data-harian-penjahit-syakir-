@@ -1035,9 +1035,16 @@ function hitungStokBarang(dari, sampai) {
   // yang salah maupun untuk memunculkan barang yang ditambahkan admin sendiri
   // walau belum ada data produksinya sama sekali.
   const penyesuaianMap = getStokPenyesuaian();
+  // Kelompokkan berdasarkan (barang+warna) PERSIS (huruf besar/kecil dibedakan), supaya
+  // "Merah" dan "merah" tidak saling menimpa. Kalau ada dokumen duplikat untuk kombinasi
+  // yang sama persis, pakai yang paling baru diubah (updatedAt terbesar).
+  const penyesuaianByKey = {};
   Object.values(penyesuaianMap).forEach(p => {
     const key = p.barang + '|' + p.warna;
     if (!map[key]) map[key] = { barang: p.barang, warna: p.warna, pola: 0, produksi: 0 };
+    if (!penyesuaianByKey[key] || (p.updatedAt || 0) >= (penyesuaianByKey[key].updatedAt || 0)) {
+      penyesuaianByKey[key] = p;
+    }
   });
 
   // Semua barang & warna dari Kelola Barang otomatis masuk daftar stok
@@ -1056,7 +1063,7 @@ function hitungStokBarang(dari, sampai) {
 
   return Object.values(map)
     .map(r => {
-      const pDoc = penyesuaianMap[stokPenyesuaianDocId(r.barang, r.warna)];
+      const pDoc = penyesuaianByKey[r.barang + '|' + r.warna];
       const penyesuaian = pDoc ? (pDoc.penyesuaian || 0) : 0;
       return { ...r, penyesuaian, sisa: r.pola - r.produksi + penyesuaian };
     })

@@ -333,7 +333,11 @@ db.collection('stok_penyesuaian').onSnapshot(snap => {
 function onStokPenyesuaianChanged() {}
 
 function stokPenyesuaianDocId(barang, warna) {
-  const safe = s => (s || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  // PENTING: jangan toLowerCase() di sini. Barang/warna dengan ejaan beda huruf besar-
+  // kecil (mis. "Merah" vs "merah") harus dianggap baris yang BEDA di Stok Barang, supaya
+  // masing-masing punya penyesuaian sendiri-sendiri dan tidak saling menimpa saat diedit
+  // atau dihapus salah satunya.
+  const safe = s => (s || '').toString().trim().replace(/[^a-zA-Z0-9]+/g, '_');
   return `${safe(barang)}__${safe(warna)}`;
 }
 
@@ -341,11 +345,23 @@ function getStokPenyesuaian() {
   return cachedStokPenyesuaian;
 }
 
+// Cari id dokumen stok_penyesuaian yang field barang+warna-nya PERSIS sama (case-sensitive)
+// dengan yang diminta. Dipakai supaya simpan/hapus selalu mengenai dokumen yang benar,
+// walau dulu sempat tersimpan dengan skema id lama (huruf kecil semua).
+function findStokPenyesuaianDocIds(barang, warna) {
+  return Object.entries(cachedStokPenyesuaian)
+    .filter(([, p]) => p.barang === barang && p.warna === warna)
+    .map(([id]) => id);
+}
+
 // Simpan/ubah nilai penyesuaian (Lusin) untuk kombinasi barang+warna tertentu.
 // Dipakai baik untuk mengoreksi angka Stok Barang, maupun untuk menambahkan
 // baris barang baru ke tabel Stok Barang (dengan penyesuaian awal = jumlah stok awal).
+// Kalau sudah ada dokumen untuk kombinasi ini, dokumen itu yang di-update (bukan bikin baru),
+// supaya tidak menumpuk duplikat.
 async function saveStokPenyesuaian(barang, warna, penyesuaian) {
-  const id = stokPenyesuaianDocId(barang, warna);
+  const idLama = findStokPenyesuaianDocIds(barang, warna)[0];
+  const id = idLama || stokPenyesuaianDocId(barang, warna);
   await db.collection('stok_penyesuaian').doc(id).set({
     barang, warna,
     penyesuaian: penyesuaian || 0,
@@ -353,11 +369,12 @@ async function saveStokPenyesuaian(barang, warna, penyesuaian) {
   });
 }
 
-// Hapus penyesuaian manual untuk kombinasi barang+warna tertentu (dipakai saat admin
-// menghapus baris dari daftar Stok Barang).
+// Hapus SEMUA dokumen penyesuaian untuk kombinasi barang+warna ini (dipakai saat admin
+// menghapus baris dari daftar Stok Barang). Dicari lewat isi field, bukan lewat id, supaya
+// dokumen lama dengan skema id apa pun tetap ikut terhapus.
 async function deleteStokPenyesuaian(barang, warna) {
-  const id = stokPenyesuaianDocId(barang, warna);
-  await db.collection('stok_penyesuaian').doc(id).delete();
+  const ids = findStokPenyesuaianDocIds(barang, warna);
+  await Promise.all(ids.map(id => db.collection('stok_penyesuaian').doc(id).delete()));
 }
 
 const USERS = {
