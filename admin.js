@@ -1064,8 +1064,11 @@ function hitungStokBarang(dari, sampai) {
   return Object.values(map)
     .map(r => {
       const pDoc = penyesuaianByKey[r.barang + '|' + r.warna];
-      const penyesuaian = pDoc ? (pDoc.penyesuaian || 0) : 0;
-      return { ...r, penyesuaian, sisa: r.pola - r.produksi + penyesuaian };
+      const penyesuaian     = pDoc ? (pDoc.penyesuaian     || 0) : 0;
+      const polaPenyesuaian = pDoc ? (pDoc.polaPenyesuaian || 0) : 0;
+      const polaAsli = r.pola;
+      const pola = polaAsli + polaPenyesuaian;
+      return { ...r, polaAsli, pola, polaPenyesuaian, penyesuaian, sisa: pola - r.produksi + penyesuaian };
     })
     .sort((a,b) => idx(a.barang) - idx(b.barang) || a.barang.localeCompare(b.barang, 'id') || idxW(a) - idxW(b));
 }
@@ -1099,7 +1102,7 @@ function tampilkanStok() {
     <tr>
       <td><strong>${r.barang}</strong></td>
       <td><span class="badge badge-color">${r.warna}</span></td>
-      <td>${formatQty(r.pola)} Lsn</td>
+      <td>${formatQty(r.pola)} Lsn${r.polaPenyesuaian ? ` <span style="font-size:11px;color:var(--muted);">(disesuaikan)</span>` : ''}</td>
       <td>${formatQty(r.produksi)} Lsn</td>
       <td><span class="badge badge-qty" style="${r.sisa < 0 ? 'background:var(--danger);color:#fff;' : ''}">${formatQty(r.sisa)} Lsn</span>${r.penyesuaian ? ` <span style="font-size:11px;color:var(--muted);">(disesuaikan)</span>` : ''}</td>
       <td>
@@ -1237,7 +1240,7 @@ async function tambahBarangStok() {
   btn.disabled = true; btn.innerHTML = '<span class="spinner spinner-dark"></span>Menambahkan...';
 
   try {
-    await saveStokPenyesuaian(barang, warna, 0);
+    await saveStokPenyesuaian(barang, warna, {});
   } catch (e) {
     console.error(e);
     btn.disabled = false; btn.innerHTML = orig;
@@ -1291,7 +1294,7 @@ async function hapusBarisStok(barang, warna) {
   tampilkanStok();
 }
 
-/* ── Edit angka Sisa Stok (koreksi manual oleh admin) ── */
+/* ── Edit angka Dipotong Tim Pola & Sisa Stok (koreksi manual oleh admin) ── */
 function bukaModalEditStok(barang, warna) {
   const rows = hitungStokBarang(document.getElementById('sb-dari').value, document.getElementById('sb-sampai').value);
   const row = rows.find(r => r.barang === barang && r.warna === warna);
@@ -1301,8 +1304,22 @@ function bukaModalEditStok(barang, warna) {
   document.getElementById('es-warna-label').textContent  = warna;
   document.getElementById('es-barang-key').value = barang;
   document.getElementById('es-warna-key').value  = warna;
+  document.getElementById('es-nilai-pola').value = formatQty(row.pola);
+  document.getElementById('es-nilai-pola').dataset.polaLama = row.pola;
   document.getElementById('es-nilai').value = formatQty(row.sisa);
+  document.getElementById('es-nilai').dataset.sisaLama = row.sisa;
   document.getElementById('stok-edit-modal').style.display = 'flex';
+}
+
+// Supaya "Sisa Stok" otomatis ikut naik/turun saat admin mengubah "Dipotong Tim Pola"
+// (kecuali admin lalu mengetik ulang angka Sisa Stok secara manual — nilai terakhir itu
+// yang dipakai saat disimpan).
+function sinkronSisaDariPola() {
+  const polaLama = parseFloat(document.getElementById('es-nilai-pola').dataset.polaLama);
+  const polaBaru = parseFloat(document.getElementById('es-nilai-pola').value);
+  const sisaLama = parseFloat(document.getElementById('es-nilai').dataset.sisaLama);
+  if (isNaN(polaLama) || isNaN(polaBaru) || isNaN(sisaLama)) return;
+  document.getElementById('es-nilai').value = formatQty(sisaLama + (polaBaru - polaLama));
 }
 
 function tutupModalEditStok() {
@@ -1312,23 +1329,28 @@ function tutupModalEditStok() {
 async function simpanEditStok() {
   const barang = document.getElementById('es-barang-key').value;
   const warna  = document.getElementById('es-warna-key').value;
+  const polaBaru  = parseFloat(document.getElementById('es-nilai-pola').value);
   const nilaiBaru = parseFloat(document.getElementById('es-nilai').value);
+  if (isNaN(polaBaru))  return toast('Nilai Dipotong Tim Pola tidak valid!', 'danger');
   if (isNaN(nilaiBaru)) return toast('Nilai Sisa Stok tidak valid!', 'danger');
 
-  // Penyesuaian dihitung ulang dari basis (Dipotong - Dikerjakan) rentang tanggal
-  // yang sedang ditampilkan, supaya angka Sisa Stok yang tampil persis sesuai
-  // yang dimasukkan admin.
+  // Penyesuaian dihitung ulang dari basis (pola asli & pola-produksi) rentang tanggal
+  // yang sedang ditampilkan, supaya angka yang tampil persis sesuai yang dimasukkan admin.
+  // Mengubah "Dipotong Tim Pola" otomatis ikut mengubah "Sisa Stok" (karena sisa dihitung
+  // dari pola), kecuali admin juga mengisi angka Sisa Stok yang berbeda secara manual.
   const rows = hitungStokBarang(document.getElementById('sb-dari').value, document.getElementById('sb-sampai').value);
   const row = rows.find(r => r.barang === barang && r.warna === warna);
-  const basis = row ? (row.pola - row.produksi) : 0;
-  const penyesuaianBaru = nilaiBaru - basis;
+  const polaAsli = row ? row.polaAsli : 0;
+  const produksi = row ? row.produksi : 0;
+  const polaPenyesuaianBaru = polaBaru - polaAsli;
+  const penyesuaianBaru = nilaiBaru - (polaBaru - produksi);
 
   const btn = document.getElementById('btn-simpan-edit-stok');
   const orig = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spinner spinner-dark"></span>Menyimpan...';
 
   try {
-    await saveStokPenyesuaian(barang, warna, penyesuaianBaru);
+    await saveStokPenyesuaian(barang, warna, { polaPenyesuaian: polaPenyesuaianBaru, penyesuaian: penyesuaianBaru });
   } catch (e) {
     console.error(e);
     btn.disabled = false; btn.innerHTML = orig;

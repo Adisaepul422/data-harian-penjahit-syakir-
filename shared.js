@@ -29,6 +29,7 @@ const HARGA_LUSIN_PENJAHIT = {
   "parsya":             80000,
   "ransel mini pack":   95000,
   "ransel besar":       115000,
+  "gloria":             85000,
 };
 
 // Harga per Lusin untuk TIM POLA (pekerjaan cutting/pola)
@@ -51,6 +52,7 @@ const HARGA_LUSIN_POLA = {
   "parsya":             15000,
   "ransel mini pack":   15000,
   "ransel besar":       20000,
+  "gloria":             15000,
 };
 
 // Dipertahankan supaya kode lama yang masih memanggil HARGA_LUSIN (tanpa embel tim)
@@ -136,6 +138,7 @@ const BARANG_DEFAULT = [
   { nama: "Ransel Mini",    warna: ["Pink", "Biru", "Hitam", "Bw"] },
   { nama: "Ransel Besar",   warna: ["Pink", "Biru", "Hitam", "Bw"] },
   { nama: "Ransel Mini Pack",warna: ["Pink", "Biru", "Hitam", "Bw"] },
+  { nama: "gloria",         warna: ["Hitam",] },
 ];
 
 const firebaseConfig = {
@@ -354,17 +357,23 @@ function findStokPenyesuaianDocIds(barang, warna) {
     .map(([id]) => id);
 }
 
-// Simpan/ubah nilai penyesuaian (Lusin) untuk kombinasi barang+warna tertentu.
-// Dipakai baik untuk mengoreksi angka Stok Barang, maupun untuk menambahkan
-// baris barang baru ke tabel Stok Barang (dengan penyesuaian awal = jumlah stok awal).
+// Simpan/ubah penyesuaian (Lusin) untuk kombinasi barang+warna tertentu. `updates` boleh
+// berisi salah satu atau kedua field berikut (yang tidak disebut, nilai lamanya dipertahankan):
+//   - polaPenyesuaian: koreksi pada "Dipotong Tim Pola"
+//   - penyesuaian:     koreksi pada "Sisa Stok" (di atas hasil pola-produksi yang sudah final)
+// Dipakai untuk mengoreksi angka Stok Barang, maupun menambahkan baris barang baru ke
+// tabel Stok Barang (panggil dengan updates = {} untuk barang baru, keduanya mulai dari 0).
 // Kalau sudah ada dokumen untuk kombinasi ini, dokumen itu yang di-update (bukan bikin baru),
 // supaya tidak menumpuk duplikat.
-async function saveStokPenyesuaian(barang, warna, penyesuaian) {
-  const idLama = findStokPenyesuaianDocIds(barang, warna)[0];
+async function saveStokPenyesuaian(barang, warna, updates) {
+  updates = updates || {};
+  const idLama   = findStokPenyesuaianDocIds(barang, warna)[0];
+  const existing = idLama ? cachedStokPenyesuaian[idLama] : null;
   const id = idLama || stokPenyesuaianDocId(barang, warna);
   await db.collection('stok_penyesuaian').doc(id).set({
     barang, warna,
-    penyesuaian: penyesuaian || 0,
+    penyesuaian:     'penyesuaian'     in updates ? (updates.penyesuaian     || 0) : (existing ? (existing.penyesuaian     || 0) : 0),
+    polaPenyesuaian: 'polaPenyesuaian' in updates ? (updates.polaPenyesuaian || 0) : (existing ? (existing.polaPenyesuaian || 0) : 0),
     updatedAt: Date.now()
   });
 }
@@ -390,6 +399,7 @@ const USERS = {
   cana:    { pass: "produksi123", role: "produksi", tim: "penjahit" },
   ucu:     { pass: "produksi123", role: "produksi", tim: "penjahit" },
   dendi:   { pass: "produksi123", role: "produksi", tim: "penjahit" },
+  cana:    { pass: "produksi123", role: "produksi", tim: "penjahit" },
   cutting: { pass: "Potong123",   role: "produksi", tim: "pola" },
   admin:   { pass: "admin123",    role: "admin" },
 };
