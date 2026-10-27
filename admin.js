@@ -473,7 +473,7 @@ function tampilkanSlipList() {
 
   const daftarPekerja = Object.values(pekerjaMap).sort((a,b) => a.nama.localeCompare(b.nama, 'id'));
 
-  let grandTotal = 0;
+  let grandTotal = 0, grandPotongan = 0;
   const barisPekerja = daftarPekerja.map(p => {
     const dataPekerja = getData().filter(d => (d.username || d.nama) === (p.username || p.nama));
     const tim = getWorkerTim(p.username, p.nama);
@@ -482,7 +482,8 @@ function tampilkanSlipList() {
     const totalRp  = rows.reduce((a,r) => a + r.subtotal, 0);
     grandTotal += totalRp;
     const potongan = getPotongan(p.username || p.nama, dari, sampai);
-    const totalPotongan = potongan ? potongan.totalPotongan : 0;
+    const totalPotongan = potongan ? (potongan.totalPotongan || 0) : 0;
+    grandPotongan += totalPotongan;
     return `
       <tr>
         <td><strong>${p.nama}</strong></td>
@@ -496,8 +497,16 @@ function tampilkanSlipList() {
 
   const barisTotal = `
     <tr style="background:var(--brand-light);">
-      <td colspan="3" style="text-align:right;font-weight:800;">TOTAL KESELURUHAN</td>
+      <td colspan="3" style="text-align:right;font-weight:800;">TOTAL GAJI</td>
       <td colspan="3"><span class="badge badge-qty" style="font-size:13px;font-weight:800;">${formatRupiah(grandTotal)}</span></td>
+    </tr>
+    <tr style="background:var(--brand-light);">
+      <td colspan="3" style="text-align:right;font-weight:800;">TOTAL POTONGAN</td>
+      <td colspan="3"><span class="badge badge-qty" style="font-size:13px;font-weight:800;background:var(--danger);color:#fff;">${formatRupiah(grandPotongan)}</span></td>
+    </tr>
+    <tr style="background:var(--brand-light);">
+      <td colspan="3" style="text-align:right;font-weight:800;">TOTAL KESELURUHAN</td>
+      <td colspan="3"><span class="badge badge-qty" style="font-size:13px;font-weight:800;">${formatRupiah(grandTotal - grandPotongan)}</span></td>
     </tr>`;
 
   tbody.innerHTML = barisPekerja + barisTotal;
@@ -525,6 +534,8 @@ function bukaSlipModal(username, nama, dari, sampai) {
   const pgKoperasi = potonganTersimpan ? potonganTersimpan.koperasi  : 0;
   const pgLainKet  = potonganTersimpan ? potonganTersimpan.lainKet   : '';
   const pgLain     = potonganTersimpan ? potonganTersimpan.lainNominal : 0;
+  const pgLainKet2 = potonganTersimpan ? (potonganTersimpan.lainKet2 || '') : '';
+  const pgLain2    = potonganTersimpan ? (potonganTersimpan.lainNominal2 || 0) : 0;
 
   // Semua baris QTY & HPP dibuat jadi <input> supaya admin bisa mengedit
   // langsung, dan Jumlah otomatis dihitung ulang saat diketik (lihat hitungTotalSlip).
@@ -603,6 +614,10 @@ function bukaSlipModal(username, nama, dari, sampai) {
           <label>Pinjaman Lainnya (<input type="text" id="slip-lain-ket" placeholder="keterangan" style="width:80px;display:inline;" value="${(pgLainKet||'').replace(/"/g,'&quot;')}">)</label>
           <input type="number" id="slip-lain-nominal" value="${pgLain}" min="0" oninput="hitungTotalSlip()">
         </div>
+        <div class="slip-pengurangan-row">
+          <label>Pinjaman Lainnya (<input type="text" id="slip-lain-ket2" placeholder="keterangan" style="width:80px;display:inline;" value="${(pgLainKet2||'').replace(/"/g,'&quot;')}">)</label>
+          <input type="number" id="slip-lain-nominal2" value="${pgLain2}" min="0" oninput="hitungTotalSlip()">
+        </div>
         <div class="no-print" id="slip-potongan-status" style="font-size:11px;color:var(--muted);margin-top:6px;">${potonganTersimpan ? '✅ Potongan tersimpan untuk periode ini.' : '⚠️ Potongan belum disimpan. Isi lalu klik "💾 Simpan Potongan" sebelum mencetak.'}</div>
         <div class="slip-total-row" style="font-size:12.5px;margin-top:4px;">
           <span>Total Pengurangan</span>
@@ -655,7 +670,8 @@ function hitungTotalSlip() {
   const tabungan = parseFloat(document.getElementById('slip-tabungan').value) || 0;
   const koperasi = parseFloat(document.getElementById('slip-koperasi').value) || 0;
   const lain     = parseFloat(document.getElementById('slip-lain-nominal').value) || 0;
-  const totalPengurangan = tabungan + koperasi + lain;
+  const lain2    = parseFloat(document.getElementById('slip-lain-nominal2').value) || 0;
+  const totalPengurangan = tabungan + koperasi + lain + lain2;
   document.getElementById('slip-total-pengurangan').textContent = formatRupiah(totalPengurangan);
 
   const totalDiterima = totalPenghasilan - totalPengurangan;
@@ -682,12 +698,14 @@ async function simpanPotonganSlip() {
   const koperasi = parseFloat(document.getElementById('slip-koperasi').value) || 0;
   const lainKet  = document.getElementById('slip-lain-ket').value.trim();
   const lain     = parseFloat(document.getElementById('slip-lain-nominal').value) || 0;
+  const lainKet2 = document.getElementById('slip-lain-ket2').value.trim();
+  const lain2    = parseFloat(document.getElementById('slip-lain-nominal2').value) || 0;
 
   const btn = document.getElementById('btn-simpan-potongan');
   if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
 
   try {
-    await savePotongan(username || nama, nama, dari, sampai, tabungan, koperasi, lainKet, lain);
+    await savePotongan(username || nama, nama, dari, sampai, tabungan, koperasi, lainKet, lain, lainKet2, lain2);
     toast('Potongan berhasil disimpan! 💾', 'success');
     const status = document.getElementById('slip-potongan-status');
     if (status) status.textContent = '✅ Potongan tersimpan untuk periode ini.';

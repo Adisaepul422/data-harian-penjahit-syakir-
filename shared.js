@@ -283,8 +283,8 @@ function getPotongan(usernameOrNama, dari, sampai) {
 }
 
 // Simpan potongan (dipanggil admin setelah mengisi Tabungan/Koperasi/Pinjaman Lainnya di slip).
-async function savePotongan(usernameOrNama, nama, dari, sampai, tabungan, koperasi, lainKet, lainNominal) {
-  const totalPotongan = (tabungan || 0) + (koperasi || 0) + (lainNominal || 0);
+async function savePotongan(usernameOrNama, nama, dari, sampai, tabungan, koperasi, lainKet, lainNominal, lainKet2, lainNominal2) {
+  const totalPotongan = (tabungan || 0) + (koperasi || 0) + (lainNominal || 0) + (lainNominal2 || 0);
   const id = potonganDocId(usernameOrNama, dari, sampai);
   await db.collection('potongan_slip').doc(id).set({
     username: usernameOrNama || '',
@@ -294,6 +294,8 @@ async function savePotongan(usernameOrNama, nama, dari, sampai, tabungan, kopera
     koperasi: koperasi || 0,
     lainKet: lainKet || '',
     lainNominal: lainNominal || 0,
+    lainKet2: lainKet2 || '',
+    lainNominal2: lainNominal2 || 0,
     totalPotongan,
     updatedAt: Date.now()
   });
