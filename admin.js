@@ -108,7 +108,14 @@ onDataChanged = function () {
 onPotonganChanged = function () {
   if (document.getElementById('slip-list-wrap') && document.getElementById('slip-list-wrap').style.display !== 'none') tampilkanSlipList();
 };
+// Harga diubah (dari perangkat admin mana pun) -> segarkan tab Harga & daftar Slip Gaji
+onHargaChanged = function () {
+  if (!hargaDirty) renderHargaTable();
+  if (document.getElementById('slip-list-wrap') && document.getElementById('slip-list-wrap').style.display !== 'none') tampilkanSlipList();
+};
+
 onBarangChanged = function () {
+  if (!hargaDirty) renderHargaTable();
   loadFilterBarangSelect();
   renderBarangTable();
   loadStokTambahBarangSelect();
@@ -148,8 +155,14 @@ function showAdminTab(tabId) {
   // Buka tab Data Produksi = admin dianggap sudah "mengecek" data baru
   if (tabId === 'data') clearNotifBadge();
 
+  // Buka tab Harga Barang = tampilkan harga terbaru (kecuali ada perubahan yang belum disimpan)
+  if (tabId === 'harga' && !hargaDirty) renderHargaTable();
+
   // Buka tab Stok Barang = langsung tampilkan stok semua barang dari Kelola Barang
   if (tabId === 'stok') tampilkanStok();
+
+  // Kartu di tab yang baru dibuka masuk dengan animasi (GSAP + ScrollTrigger, lihat motion.js)
+  if (window.Motion) Motion.revealTab(document.getElementById('tab-' + tabId));
 
   // Scroll ke atas konten setiap ganti tab supaya tidak nyangkut di posisi scroll lama
   window.scrollTo({ top: document.querySelector('.admin-subnav').offsetTop - 56, behavior: 'smooth' });
@@ -473,6 +486,8 @@ function tampilkanSlipList() {
 
   const daftarPekerja = Object.values(pekerjaMap).sort((a,b) => a.nama.localeCompare(b.nama, 'id'));
 
+  slipExportCache = [];
+  slipExportRange = { dari, sampai };
   let grandTotal = 0, grandPotongan = 0;
   const barisPekerja = daftarPekerja.map(p => {
     const dataPekerja = getData().filter(d => (d.username || d.nama) === (p.username || p.nama));
@@ -484,6 +499,7 @@ function tampilkanSlipList() {
     const potongan = getPotongan(p.username || p.nama, dari, sampai);
     const totalPotongan = potongan ? (potongan.totalPotongan || 0) : 0;
     grandPotongan += totalPotongan;
+    slipExportCache.push({ nama: p.nama, username: p.username, tim, rows, totalQty, totalRp, totalPotongan });
     return `
       <tr>
         <td><strong>${p.nama}</strong></td>
@@ -547,8 +563,8 @@ function bukaSlipModal(username, nama, dari, sampai) {
       </td>
       <td>${r.label}</td>
       <td class="slip-center">
-        <input type="number" class="slip-row-hpp" data-idx="${idx}" value="${Math.round(r.harga/1000)}" min="0"
-               oninput="hitungTotalSlip()" style="width:52px;text-align:center;border:1px solid var(--border);border-radius:4px;padding:2px;">
+        <input type="number" class="slip-row-hpp" data-idx="${idx}" value="${r.harga}" min="0" step="500"
+               oninput="hitungTotalSlip()" style="width:72px;text-align:center;border:1px solid var(--border);border-radius:4px;padding:2px;">
       </td>
       <td class="slip-right slip-row-jumlah" data-idx="${idx}">${formatRupiah(r.subtotal)}</td>
     </tr>`).join('');
@@ -576,7 +592,7 @@ function bukaSlipModal(username, nama, dari, sampai) {
           <tr>
             <th class="slip-center" style="width:44px;">Qty</th>
             <th>Nama Barang</th>
-            <th class="slip-center" style="width:56px;">HPP</th>
+            <th class="slip-center" style="width:78px;">Harga/Lsn</th>
             <th class="slip-right" style="width:90px;">Jumlah</th>
           </tr>
         </thead>
@@ -591,7 +607,7 @@ function bukaSlipModal(username, nama, dari, sampai) {
         </tbody>
       </table>
 
-      <div class="no-print" style="font-size:10.5px;color:var(--muted);margin-top:4px;">💡 Qty & HPP di atas bisa diedit langsung kalau perlu koreksi — totalnya otomatis update. Data satuan Pcs otomatis dikonversi (1 Lusin = 12 Pcs).</div>
+      <div class="no-print" style="font-size:10.5px;color:var(--muted);margin-top:4px;">💡 Qty & Harga/Lsn di atas bisa diedit langsung kalau perlu koreksi — totalnya otomatis update. Data satuan Pcs otomatis dikonversi (1 Lusin = 12 Pcs).</div>
 
       <hr class="slip-divider">
       <div class="slip-total-row">
@@ -635,6 +651,7 @@ function bukaSlipModal(username, nama, dari, sampai) {
   `;
 
   document.getElementById('slip-modal').style.display = 'flex';
+  if (window.Motion) Motion.pop('#slip-print-area');
   hitungTotalSlip();
 }
 
@@ -649,7 +666,7 @@ function hitungTotalSlip() {
     const idx = input.dataset.idx;
     const qty = parseFloat(input.value) || 0;
     const hppInput = area.querySelector(`.slip-row-hpp[data-idx="${idx}"]`);
-    const hpp = (parseFloat(hppInput.value) || 0) * 1000;
+    const hpp = parseFloat(hppInput.value) || 0;
     const jumlah = qty * hpp;
     const jumlahCell = area.querySelector(`.slip-row-jumlah[data-idx="${idx}"]`);
     if (jumlahCell) jumlahCell.textContent = formatRupiah(jumlah);
@@ -961,13 +978,13 @@ async function simpanEditData() {
   const nama   = document.getElementById('em-nama').value.trim();
   const barang = document.getElementById('em-barang').value;
   const warna  = document.getElementById('em-warna').value;
-  const jumlah = parseInt(document.getElementById('em-jumlah').value);
+  const jumlah = Math.round(parseFloat(document.getElementById('em-jumlah').value) * 100) / 100;
   const satuan = document.getElementById('em-satuan').value;
 
   if (!nama)        return toast('Nama pekerja wajib diisi!', 'danger');
   if (!barang)      return toast('Pilih nama barang!', 'danger');
   if (!warna)       return toast('Pilih warna barang!', 'danger');
-  if (!jumlah || jumlah < 1) return toast('Jumlah harus lebih dari 0!', 'danger');
+  if (!jumlah || jumlah <= 0) return toast('Jumlah harus lebih dari 0!', 'danger');
   if (!satuan)      return toast('Pilih satuan (Lusin/Pcs)!', 'danger');
 
   const btn = document.getElementById('btn-simpan-edit');
@@ -1416,3 +1433,204 @@ document.addEventListener('DOMContentLoaded', () => {
   initAdmin();
   checkNotifBanner();
 });
+
+/* ═══════════════════════════════
+   HARGA BARANG (admin) — tersimpan di Firestore: config/harga
+═══════════════════════════════ */
+let hargaDirty = false;
+
+function tandaiHargaDirty() {
+  hargaDirty = true;
+  const s = document.getElementById('hg-status');
+  if (s) s.textContent = '⚠️ Ada perubahan yang belum disimpan.';
+}
+
+function renderHargaTable() {
+  ['penjahit', 'pola'].forEach(tim => {
+    const tbody = document.getElementById('hg-tbody-' + tim);
+    if (!tbody) return;
+    if (!hargaLoaded) { tbody.innerHTML = loadingStateHTML(2); return; }
+
+    const daftar = getDaftarHargaByTim(tim);
+    // Semua barang dari Kelola Barang selalu tampil (walau belum ada harganya),
+    // ditambah harga lama yang barangnya sudah tidak ada di Kelola Barang.
+    const rows = new Map();
+    getBarang().forEach(b => rows.set((b.nama || '').trim().toLowerCase(), b.nama));
+    Object.keys(daftar).forEach(k => { if (!rows.has(k)) rows.set(k, titleCase(k)); });
+
+    if (rows.size === 0) {
+      tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:16px;">Belum ada barang. Tambahkan dulu di tab Kelola Barang.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = [...rows.entries()].map(([key, label]) => {
+      const ada = daftar.hasOwnProperty(key);
+      return `
+        <tr>
+          <td><strong>${escapeHtml(label)}</strong>${ada ? '' : ' <span class="badge" style="background:#fef3c7;color:#92400e;">belum ada harga</span>'}</td>
+          <td>
+            <div class="hg-field"><span>Rp</span>
+              <input type="number" class="hg-input" data-tim="${tim}" data-key="${escapeHtml(key)}"
+                     min="0" step="500" inputmode="numeric" placeholder="0" value="${ada ? daftar[key] : ''}"
+                     oninput="tandaiHargaDirty()">
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  });
+  hargaDirty = false;
+  const s = document.getElementById('hg-status');
+  if (s) {
+    if (!hargaLoaded) s.textContent = 'Memuat harga...';
+    else if (hargaError) s.textContent = '⚠️ Harga tidak bisa dimuat/disimpan di database (' + (hargaError.code || 'error') + '). Cek izin Firestore untuk dokumen config/harga.';
+    else s.textContent = '';
+  }
+}
+
+async function simpanHarga() {
+  const out = { penjahit: [], pola: [] };
+  let tidakValid = false;
+  document.querySelectorAll('.hg-input').forEach(inp => {
+    if (inp.value === '') return;               // kosong = tidak ada harga
+    const v = parseFloat(inp.value);
+    if (!isFinite(v) || v < 0) { tidakValid = true; return; }
+    out[inp.dataset.tim].push({ nama: inp.dataset.key, harga: Math.round(v) });
+  });
+  if (tidakValid) return toast('Harga harus berupa angka 0 atau lebih!', 'danger');
+  if (!confirm('Simpan harga baru?\n\nHarga langsung berlaku untuk slip gaji dan pendapatan SEMUA periode, termasuk minggu lalu.')) return;
+
+  const btn = document.getElementById('hg-simpan-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
+  try {
+    await db.collection('config').doc('harga').set(out);
+    hargaDirty = false;
+    const s = document.getElementById('hg-status');
+    if (s) s.textContent = '✅ Harga tersimpan ' + nowStr() + '.';
+    toast('Harga berhasil disimpan! 💲', 'success');
+  } catch (e) {
+    console.error(e);
+    if (e && e.code === 'permission-denied') toast('Tidak ada izin menyimpan harga. Cek Firestore Rules untuk config/harga.', 'danger');
+    else toast('Gagal menyimpan harga. Cek koneksi internet!', 'danger');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '💾 Simpan Harga'; }
+}
+
+/* ═══════════════════════════════
+   EKSPOR SLIP GAJI KE EXCEL
+═══════════════════════════════ */
+let slipExportCache = [];     // diisi tampilkanSlipList()
+let slipExportRange = null;
+
+const FMT_RP = '"Rp"#,##0';
+const xS  = v => ({ t: 's', v: String(v == null ? '' : v) });
+const xN  = (v, z) => z ? { t: 'n', v: v, z: z } : { t: 'n', v: v };
+const xFx = (f, v, z) => ({ t: 'n', f: f, v: v, z: z || FMT_RP });
+const bulat2 = n => Math.round((n || 0) * 100) / 100;
+const timLabelOf = tim => tim === 'pola' ? 'Pola (Cutting)' : 'Penjahit';
+
+// Ekspor SEMUA pekerja pada periode yang sedang ditampilkan di daftar Slip Gaji
+function exportSlipListExcel() {
+  if (!slipExportRange || slipExportCache.length === 0) {
+    return toast('Pilih periode lalu klik "Tampilkan" dulu, baru ekspor.', 'danger');
+  }
+  const { dari, sampai } = slipExportRange;
+  const n = slipExportCache.length;
+
+  const rekap = [['No', 'Nama Pekerja', 'Username', 'Tim', 'Total Lusin', 'Total Penghasilan', 'Total Potongan', 'Diterima']];
+  let sumQty = 0, sumRp = 0, sumPot = 0;
+  slipExportCache.forEach((p, i) => {
+    const r = i + 2;
+    const rp = Math.round(p.totalRp);
+    sumQty += p.totalQty; sumRp += rp; sumPot += p.totalPotongan;
+    rekap.push([xN(i + 1), xS(p.nama), xS(p.username), xS(timLabelOf(p.tim)), xN(bulat2(p.totalQty)),
+                xN(rp, FMT_RP), xN(p.totalPotongan, FMT_RP), xFx(`F${r}-G${r}`, rp - p.totalPotongan)]);
+  });
+  const last = n + 1;
+  rekap.push([xS(''), xS('TOTAL'), xS(''), xS(''),
+              xFx(`SUM(E2:E${last})`, bulat2(sumQty), 'General'),
+              xFx(`SUM(F2:F${last})`, sumRp), xFx(`SUM(G2:G${last})`, sumPot), xFx(`SUM(H2:H${last})`, sumRp - sumPot)]);
+
+  const rinci = [['Nama Pekerja', 'Tim', 'Barang', 'Qty (Lusin)', 'Harga per Lusin', 'Jumlah']];
+  slipExportCache.forEach(p => p.rows.forEach(r => {
+    if (!(r.qty > 0)) return;
+    const rr = rinci.length + 1;
+    rinci.push([xS(p.nama), xS(timLabelOf(p.tim)), xS(r.label), xN(bulat2(r.qty)), xN(r.harga, FMT_RP), xFx(`D${rr}*E${rr}`, r.qty * r.harga)]);
+  }));
+
+  const ws1 = XLSX.utils.aoa_to_sheet(rekap);
+  ws1['!cols'] = [{ wch: 5 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 16 }];
+  const ws2 = XLSX.utils.aoa_to_sheet(rinci);
+  ws2['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 16 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, 'Rekap Gaji');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Rincian Barang');
+  XLSX.writeFile(wb, `slip-gaji-rekap_${dari}_sd_${sampai}.xlsx`);
+  toast('Rekap slip gaji berhasil diekspor! 📥', 'success');
+}
+
+// Ekspor SATU slip yang sedang dibuka (mengikuti angka yang sudah diedit di slip, termasuk lembur & potongan)
+function exportSlipExcel() {
+  const area = document.getElementById('slip-print-area');
+  if (!area || !currentSlipContext) return;
+  const { username, nama: namaAsli, dari, sampai } = currentSlipContext;
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const num = id => parseFloat(val(id)) || 0;
+  const tim = getWorkerTim(username, namaAsli);
+  const nama = val('slip-nama') || namaAsli;
+
+  const aoa = [];
+  const row = cells => { aoa.push(cells); return aoa.length; };   // mengembalikan nomor baris (mulai 1)
+
+  row([xS('SLIP GAJI')]);
+  row([xS('Perusahaan'), xS('SYAKIRFAMILIA GROUP')]);
+  row([xS('Alamat'), xS('Jl. Anyar Bojong Kukun, Bandung 40382')]);
+  row([xS('Periode'), xS(`${formatDate(dari)} - ${formatDate(sampai)}`)]);
+  row([xS('Nama Karyawan'), xS(nama)]);
+  row([xS('Tim'), xS(timLabelOf(tim))]);
+  row([xS('Jabatan'), xS(val('slip-jabatan'))]);
+  row([]);
+  row([xS('Qty (Lusin)'), xS('Nama Barang'), xS('Harga per Lusin'), xS('Jumlah')]);
+
+  const first = aoa.length + 1;
+  let totalPenghasilan = 0;
+  area.querySelectorAll('.slip-row-qty').forEach(inp => {
+    const qty = parseFloat(inp.value) || 0;
+    if (qty === 0) return;                                          // barang tanpa produksi tidak ikut diekspor
+    const hppEl = area.querySelector(`.slip-row-hpp[data-idx="${inp.dataset.idx}"]`);
+    const hpp = hppEl ? (parseFloat(hppEl.value) || 0) : 0;
+    const label = inp.closest('tr').children[1].textContent.trim();
+    const r = aoa.length + 1;
+    totalPenghasilan += qty * hpp;
+    row([xN(qty), xS(label), xN(hpp, FMT_RP), xFx(`A${r}*C${r}`, qty * hpp)]);
+  });
+  const lemburQty = num('slip-lembur-qty'), lemburRate = num('slip-lembur-rate');
+  { const r = aoa.length + 1; row([xN(lemburQty), xS('Lembur'), xN(lemburRate, FMT_RP), xFx(`A${r}*C${r}`, lemburQty * lemburRate)]); }
+  totalPenghasilan += lemburQty * lemburRate;
+  const lastItem = aoa.length;
+
+  const rTotal = row([xS(''), xS('Total Penghasilan'), xS(''), xFx(`SUM(D${first}:D${lastItem})`, totalPenghasilan)]);
+  row([]);
+  row([xS('Pengurangan')]);
+  const ket1 = val('slip-lain-ket').trim(), ket2 = val('slip-lain-ket2').trim();
+  const pot = [num('slip-tabungan'), num('slip-koperasi'), num('slip-lain-nominal'), num('slip-lain-nominal2')];
+  const p1 = aoa.length + 1;
+  row([xS(''), xS('Tabungan'), xS(''), xN(pot[0], FMT_RP)]);
+  row([xS(''), xS('Pinjaman Koperasi'), xS(''), xN(pot[1], FMT_RP)]);
+  row([xS(''), xS('Pinjaman Lainnya' + (ket1 ? ` (${ket1})` : '')), xS(''), xN(pot[2], FMT_RP)]);
+  row([xS(''), xS('Pinjaman Lainnya' + (ket2 ? ` (${ket2})` : '')), xS(''), xN(pot[3], FMT_RP)]);
+  const p4 = aoa.length;
+  const totalPot = pot.reduce((a, b) => a + b, 0);
+  const rPot = row([xS(''), xS('Total Pengurangan'), xS(''), xFx(`SUM(D${p1}:D${p4})`, totalPot)]);
+  row([]);
+  row([xS(''), xS('TOTAL DITERIMA KARYAWAN'), xS(''), xFx(`D${rTotal}-D${rPot}`, totalPenghasilan - totalPot)]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 14 }, { wch: 34 }, { wch: 18 }, { wch: 18 }];
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Slip Gaji');
+  const namaFile = nama.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'pekerja';
+  XLSX.writeFile(wb, `slip-gaji_${namaFile}_${dari}_sd_${sampai}.xlsx`);
+  toast('Slip gaji berhasil diekspor! 📥', 'success');
+}

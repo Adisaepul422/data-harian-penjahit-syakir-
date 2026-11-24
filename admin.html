@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin Dashboard - syakirFamilia</title>
 <link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="motion.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" onerror="document.write('<script src=\'https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-app-compat.min.js\'><\/script>')"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" onerror="document.write('<script src=\'https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-firestore-compat.min.js\'><\/script>')"></script>
@@ -71,8 +74,9 @@
     <button class="admin-subnav-btn" data-tab="tanggal" onclick="showAdminTab('tanggal')">📅 Per Tanggal</button>
     <button class="admin-subnav-btn" data-tab="rekap" onclick="showAdminTab('rekap')">🧮 Rekap Totalan Barang</button>
     <button class="admin-subnav-btn" data-tab="barang" onclick="showAdminTab('barang')">📦 Kelola Barang</button>
+    <button class="admin-subnav-btn" data-tab="harga" onclick="showAdminTab('harga')">💲 Harga Barang</button>
     <button class="admin-subnav-btn" data-tab="slip" onclick="showAdminTab('slip')">🧾 Slip Gaji</button>
-    <button class="admin-subnav-btn" data-tab="stok" onclick="showAdminTab('stok')">📦 Stok Barang</button>
+    <button class="admin-subnav-btn" data-tab="stok" onclick="showAdminTab('stok')">📊 Stok Barang</button>
   </div>
 
   <div class="admin-wrap">
@@ -112,6 +116,36 @@
       </div>
     </div>
     </div><!-- /tab-barang -->
+
+    <div class="admin-tab-content" id="tab-harga">
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Harga per Lusin</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Atur upah per lusin untuk setiap barang. Dipakai untuk Slip Gaji dan "Pendapatan Saya" di halaman pekerja. Kosongkan kolom harga kalau barang tidak ingin dihitung.</p>
+      <div class="hg-note">⚠️ Harga baru langsung berlaku untuk <strong>semua periode</strong>, termasuk minggu lalu. Cetak atau ekspor slip periode yang sudah dibayar sebelum mengubah harga.</div>
+
+      <div class="hg-section-title">Tim Penjahit</div>
+      <div class="table-wrap">
+        <table class="hg-table">
+          <thead><tr><th>Barang</th><th>Harga per Lusin</th></tr></thead>
+          <tbody id="hg-tbody-penjahit"></tbody>
+        </table>
+      </div>
+
+      <div class="hg-section-title">Tim Pola (Cutting)</div>
+      <div class="table-wrap">
+        <table class="hg-table">
+          <thead><tr><th>Barang</th><th>Harga per Lusin</th></tr></thead>
+          <tbody id="hg-tbody-pola"></tbody>
+        </table>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="hg-simpan-btn" onclick="simpanHarga()">💾 Simpan Harga</button>
+        <button class="btn btn-outline" onclick="renderHargaTable()">↺ Batalkan Perubahan</button>
+      </div>
+      <div class="hg-status" id="hg-status"></div>
+    </div>
+    </div><!-- /tab-harga -->
 
     <div class="admin-tab-content" id="tab-tanggal">
     <!-- Rekap Data Masuk per Tanggal -->
@@ -270,6 +304,7 @@
         </div>
         <button class="btn btn-primary" style="height:42px;margin-top:auto" onclick="tampilkanSlipList()">📊 Tampilkan</button>
         <button class="btn btn-outline" style="height:42px;margin-top:auto" onclick="resetSlipList()">↺ Reset</button>
+        <button class="btn btn-success" style="height:42px;margin-top:auto" onclick="exportSlipListExcel()">📥 Ekspor Excel</button>
       </div>
 
       <div class="table-wrap" id="slip-list-wrap" style="display:none; margin-top:12px;">
@@ -391,6 +426,7 @@
     <div class="btn-row no-print" style="margin-bottom:10px; justify-content:flex-end;">
       <button class="btn btn-primary" id="btn-simpan-potongan" onclick="simpanPotonganSlip()">💾 Simpan Potongan</button>
       <button class="btn btn-accent" onclick="cetakSlip()">🖨️ Cetak</button>
+      <button class="btn btn-success" onclick="exportSlipExcel()">📥 Excel</button>
       <button class="btn btn-outline" style="background:#fff;" onclick="tutupSlipModal()">✕ Tutup</button>
     </div>
     <div id="slip-print-area" class="slip-sheet"></div>
@@ -417,7 +453,7 @@
     <div class="form-row">
       <div class="form-group">
         <label>Jumlah</label>
-        <input type="number" id="em-jumlah" min="1">
+        <input type="number" id="em-jumlah" min="0.5" step="0.5" inputmode="decimal">
       </div>
       <div class="form-group">
         <label>Satuan</label>

@@ -26,3 +26,12 @@ function doLogin() {
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
+
+// Tampilkan / sembunyikan password
+function togglePw() {
+  const inp = document.getElementById('inp-pass');
+  const btn = document.getElementById('pw-toggle');
+  const tampil = inp.type === 'password';
+  inp.type = tampil ? 'text' : 'password';
+  btn.textContent = tampil ? 'Sembunyikan' : 'Lihat';
+}

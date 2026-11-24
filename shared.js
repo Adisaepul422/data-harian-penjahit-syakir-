@@ -1,59 +1,18 @@
 /* ═══════════════════════════════════════════════════
    SHARED.JS
    Dipakai bersama oleh login.html, produksi.html, admin.html
-   Berisi: koneksi Firebase, data barang default, autentikasi
+   Berisi: koneksi Firebase, sinkronisasi barang & harga dari Firestore, autentikasi
    berbasis localStorage (karena sekarang 3 file HTML terpisah,
    bukan lagi satu halaman yang di-toggle), dan helper umum.
 ═══════════════════════════════════════════════════ */
 
-// Harga per LUSIN tiap jenis barang — dipakai untuk Slip Gaji (admin)
-// dan Pendapatan Mingguan (produksi). Key HARUS huruf kecil semua
-// (pencocokan dengan nama barang dilakukan case-insensitive).
-// Harga per Lusin untuk TIM PENJAHIT (pekerjaan menjahit)
-const HARGA_LUSIN_PENJAHIT = {
-  "arsha":              80000,
-  "marlinda":           70000,
-  "arliwi":             45000,
-  "famela":             80000,
-  "sikamaru":           75000,
-  "melody":             80000,
-  "leora":              50000,
-  "hinata":             77000,
-  "ransel mini":        87000,
-  "revana":             80000,
-  "zaskia":             75000,
-  "dinara":             77000,
-  "azzura":             75000,
-  "ananda":             75000,
-  "fairi":              75000,
-  "parsya":             80000,
-  "ransel mini pack":   95000,
-  "ransel besar":       115000,
-  "gloria":             85000,
-};
-
-// Harga per Lusin untuk TIM POLA (pekerjaan cutting/pola)
-const HARGA_LUSIN_POLA = {
-  "arsha":              15000,
-  "marlinda":           15000,
-  "arliwi":             10000,
-  "famela":             15000,
-  "sikamaru":           15000,
-  "melody":             15000,
-  "leora":              12000,
-  "hinata":             15000,
-  "ransel mini":        15000,
-  "revana":             15000,
-  "zaskia":             15000,
-  "dinara":             15000,
-  "azzura":             15000,
-  "ananda":             15000,
-  "fairi":              15000,
-  "parsya":             15000,
-  "ransel mini pack":   15000,
-  "ransel besar":       20000,
-  "gloria":             15000,
-};
+// Harga per LUSIN tiap jenis barang — dipakai untuk Slip Gaji (admin) dan Pendapatan Mingguan (produksi).
+// TIDAK ADA angka harga di kode. Semua harga disimpan di Firestore (config/harga) dan diatur admin
+// lewat tab "Harga Barang", jadi deploy ulang kode tidak pernah mengubah/mereset harga.
+// Key = nama barang huruf kecil (pencocokan nama barang dilakukan case-insensitive).
+// Objek di bawah ini diisi (ditimpa di tempat) oleh listener Firestore di bawah.
+const HARGA_LUSIN_PENJAHIT = {};   // Tim Penjahit (pekerjaan menjahit)
+const HARGA_LUSIN_POLA     = {};   // Tim Pola (pekerjaan cutting/pola)
 
 // Dipertahankan supaya kode lama yang masih memanggil HARGA_LUSIN (tanpa embel tim)
 // tetap jalan — default-nya mengikuti harga Tim Penjahit.
@@ -69,6 +28,10 @@ function getHargaLusin(namaBarang, tim) {
   const daftar = getDaftarHargaByTim(tim);
   const key = (namaBarang || '').trim().toLowerCase();
   return daftar.hasOwnProperty(key) ? daftar[key] : null;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function formatRupiah(n) {
@@ -119,27 +82,8 @@ function addDaysStr(dateStr, n) {
   return dateToLocalStr(d);
 }
 
-const BARANG_DEFAULT = [
-  { nama: "Arliwi",         warna: ["Hitam","Merah","Coklat","Biru"] },
-  { nama: "Sikamaru",       warna: ["Hitam","Coklat","Merah"] },
-  { nama: "Hinata",         warna: ["Hitam","Coklat","Merah","Putih","Pink"] },
-  { nama: "Arsha",          warna: ["Merah","Coklat","Hitam"] },
-  { nama: "Famela",         warna: ["Coklat","Biru"] },
-  { nama: "Melody",         warna: ["Biru"] },
-  { nama: "Leora",          warna: ["Coklat","Biru"] },
-  { nama: "Marlinda",       warna: ["Coklat","Hitam"] },
-  { nama: "Fairi",          warna: ["Coklat","Hitam","Merah"] },
-  { nama: "Dinara",         warna: ["Hitam","Merah","Abu","Pink","Putih"] },
-  { nama: "Ananda",         warna: ["Hitam","Coklat","Putih","Abu","Merah"] },
-  { nama: "Azzura",         warna: ["Coklat","Cream"] },
-  { nama: "Revana",         warna: ["Hitam","Mint","Navy","Merah","Putih","Hijau Tua"] },
-  { nama: "Parsya",         warna: ["Merah","Hitam","Navy"] },
-  { nama: "Zaskia",         warna: ["Hitam","Coklat","Navy","Merah"] },
-  { nama: "Ransel Mini",    warna: ["Pink", "Biru", "Hitam", "Bw"] },
-  { nama: "Ransel Besar",   warna: ["Pink", "Biru", "Hitam", "Bw"] },
-  { nama: "Ransel Mini Pack",warna: ["Pink", "Biru", "Hitam", "Bw"] },
-  { nama: "gloria",         warna: ["Hitam",] },
-];
+// Daftar barang & warna TIDAK ditulis di kode. Disimpan di Firestore (config/barang),
+// diatur admin lewat tab "Kelola Barang".
 
 const firebaseConfig = {
   apiKey: "AIzaSyDTC7injv2Q8JJ-PnYcpCfV8c_-u_9QFcU",
@@ -160,7 +104,7 @@ db.settings({
 });
 
 let cachedData   = [];
-let cachedBarang = JSON.parse(JSON.stringify(BARANG_DEFAULT));
+let cachedBarang = [];
 let dataLoaded   = false;   // false = masih memuat data pertama kali dari cloud
 let barangLoaded = false;
 
@@ -219,16 +163,51 @@ function showBrowserNotification(title, body, onClick) {
 }
 
 db.collection('config').doc('barang').onSnapshot(doc => {
-  if (doc.exists) {
-    cachedBarang = doc.data().list || [];
-  } else {
-    db.collection('config').doc('barang').set({ list: BARANG_DEFAULT });
-    cachedBarang = JSON.parse(JSON.stringify(BARANG_DEFAULT));
-  }
+  cachedBarang = doc.exists ? (doc.data().list || []) : [];
   barangLoaded = true;
   onBarangChanged();
 }, err => {
-  console.error(err);
+  console.error('Gagal memuat config/barang:', err);
+  barangLoaded = true;
+  toast('Gagal memuat daftar barang dari database. Cek koneksi internet / izin Firestore.', 'danger');
+  onBarangChanged();
+});
+
+/* ═══════════════════════════════
+   HARGA PER LUSIN — disimpan di Firestore (config/harga), diatur admin
+   lewat tab "Harga Barang". Daftar harga di bagian atas file ini hanya
+   nilai awal/cadangan. Begitu data Firestore masuk, isi objek
+   HARGA_LUSIN_PENJAHIT & HARGA_LUSIN_POLA DITIMPA di tempat (bukan dibuat
+   ulang), sehingga semua kode lama tetap otomatis memakai harga terbaru.
+═══════════════════════════════ */
+let hargaLoaded = false;
+let hargaError  = null;   // terisi kalau Firestore menolak / gagal memuat config/harga
+
+function terapkanHarga(daftar, target) {
+  Object.keys(target).forEach(k => delete target[k]);
+  (daftar || []).forEach(item => {
+    const key = ((item && item.nama) || '').toString().trim().toLowerCase();
+    const harga = Number(item && item.harga);
+    if (key && isFinite(harga) && harga >= 0) target[key] = harga;
+  });
+}
+
+// Hook — ditimpa oleh admin.js / produksi.js
+function onHargaChanged() {}
+
+db.collection('config').doc('harga').onSnapshot(doc => {
+  const d = doc.exists ? doc.data() : {};
+  terapkanHarga(d.penjahit, HARGA_LUSIN_PENJAHIT);   // dokumen belum ada = daftar kosong (belum ada harga)
+  terapkanHarga(d.pola, HARGA_LUSIN_POLA);
+  hargaError = null;
+  hargaLoaded = true;
+  onHargaChanged();
+}, err => {
+  // Jangan biarkan layar "memuat" selamanya: tampilkan penyebabnya.
+  console.error('Gagal memuat config/harga:', err);
+  hargaError = err;
+  hargaLoaded = true;
+  onHargaChanged();
 });
 
 // Indikator status koneksi internet (online/offline) di topbar

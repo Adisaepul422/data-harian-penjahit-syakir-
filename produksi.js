@@ -14,6 +14,11 @@ onBarangChanged = function () {
 
 // Timpa hook dari shared.js: setiap data produksi berubah (real-time), hitung ulang pendapatan
 onDataChanged = function () {
+  if (dataLoaded) { renderPendapatanMingguan(); renderInputHariIni(); }
+};
+
+// Harga diubah admin -> hitung ulang pendapatan secara real-time
+onHargaChanged = function () {
   if (dataLoaded) renderPendapatanMingguan();
 };
 
@@ -135,20 +140,36 @@ function loadWarna() {
   }
 }
 
-let previewBuffer = [];
+// Draft preview disimpan di HP supaya tidak hilang kalau halaman tertutup / refresh / sinyal putus.
+const DRAFT_KEY = 'draftPreview_' + (currentUsername || '');
+function muatDraft() {
+  try {
+    const a = JSON.parse(localStorage.getItem(DRAFT_KEY) || '[]');
+    return Array.isArray(a) ? a : [];
+  } catch (e) { return []; }
+}
+function simpanDraft() {
+  try {
+    if (previewBuffer.length) localStorage.setItem(DRAFT_KEY, JSON.stringify(previewBuffer));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch (e) { /* abaikan kalau penyimpanan penuh / diblokir */ }
+}
+
+let previewBuffer = muatDraft();
 
 function tambahKePreview() {
   const nama   = document.getElementById('inp-nama').value.trim();
   const barang = document.getElementById('inp-barang').value;
   const warna  = document.getElementById('inp-warna').value;
-  const jumlah = parseInt(document.getElementById('inp-jumlah').value);
+  const jumlah = Math.round(parseFloat(document.getElementById('inp-jumlah').value) * 100) / 100;
   const satuan = document.getElementById('inp-satuan').value;
   const bahan  = currentTim === 'pola' ? document.getElementById('inp-bahan').value.trim() : '';
 
   if (!nama)        return toast('Nama pekerja wajib diisi!', 'danger');
   if (!barang)      return toast('Pilih nama barang!', 'danger');
   if (!warna)       return toast('Pilih warna barang!', 'danger');
-  if (!jumlah || jumlah < 1) return toast('Jumlah harus lebih dari 0!', 'danger');
+  if (!jumlah || jumlah <= 0) return toast('Jumlah harus lebih dari 0!', 'danger');
+  if (satuan === 'Pcs' && !Number.isInteger(jumlah)) return toast('Satuan Pcs harus bilangan bulat. Untuk setengah lusin, pilih Lusin dan isi 0,5.', 'danger');
   if (!satuan)      return toast('Pilih satuan (Lusin/Pcs)!', 'danger');
   if (currentTim === 'pola' && !bahan) return toast('Penggunaan bahan wajib diisi!', 'danger');
 
@@ -164,10 +185,12 @@ function tambahKePreview() {
   if (currentTim === 'pola') document.getElementById('inp-bahan').value = '';
 
   renderPreview();
+  if (window.Motion) Motion.pop(document.querySelector('#preview-list .preview-item:last-child'));
   toast('Item ditambahkan ke preview!', 'success');
 }
 
 function renderPreview() {
+  simpanDraft();
   const section = document.getElementById('preview-section');
   const list    = document.getElementById('preview-list');
 
@@ -198,6 +221,7 @@ function hapusPreview(index) {
 
 async function simpanSemua() {
   if (previewBuffer.length === 0) return toast('Tidak ada data di preview!', 'danger');
+  if (!navigator.onLine) return toast('Tidak ada koneksi internet. Data belum disimpan, draft aman di HP. Coba lagi saat sudah online.', 'danger');
 
   const waktu = nowStr();
   const tanggal = todayStr();
@@ -249,5 +273,49 @@ function batalSemua() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initProduksi();
+  if (previewBuffer.length) { renderPreview(); toast('Draft yang belum disimpan dipulihkan.', 'success'); }
+  if (dataLoaded) renderInputHariIni();
   if (barangLoaded) loadBarangSelect();
 });
+
+/* ═══════════════════════════════
+   INPUT SAYA HARI INI — pekerja bisa melihat apa yang sudah disimpan
+   dan menghapus input hari ini yang salah (lalu input ulang).
+   Ubah ke false kalau pekerja hanya boleh melihat.
+═══════════════════════════════ */
+const IZINKAN_HAPUS_SENDIRI = true;
+
+function renderInputHariIni() {
+  const el = document.getElementById('hari-ini-list');
+  if (!el) return;
+  const hariIni = sortByWaktuDesc(getData().filter(d => d.username === currentUsername && d.tanggal === todayStr()));
+
+  if (hariIni.length === 0) {
+    el.innerHTML = '<div class="preview-empty">Belum ada input yang tersimpan hari ini.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="preview-list">' + hariIni.map(d => `
+    <div class="preview-item">
+      <div class="pi-info">
+        <div class="pi-name">${escapeHtml(d.barang)} · ${escapeHtml(d.warna)}</div>
+        <div class="pi-detail"><span class="badge badge-qty">${formatQty(d.jumlah)} ${escapeHtml(d.satuan || 'Lusin')}</span> · ${escapeHtml(d.waktu)}</div>
+        ${d.bahan ? `<div class="pi-detail" style="margin-top:2px;">🧵 ${escapeHtml(d.bahan)}</div>` : ''}
+      </div>
+      ${IZINKAN_HAPUS_SENDIRI ? `<button class="pi-del" onclick="hapusInputSaya('${escapeHtml(d._docId)}')" title="Hapus input ini">✕</button>` : ''}
+    </div>`).join('') + '</div>';
+}
+
+async function hapusInputSaya(docId) {
+  const d = getData().find(x => x._docId === docId);
+  if (!d || d.username !== currentUsername || d.tanggal !== todayStr()) {
+    return toast('Hanya input milik Anda hari ini yang bisa dihapus.', 'danger');
+  }
+  if (!confirm(`Hapus input ini?\n${d.barang} · ${d.warna} · ${formatQty(d.jumlah)} ${d.satuan || 'Lusin'}`)) return;
+  try {
+    await db.collection('produksi_data').doc(docId).delete();
+    toast('Input dihapus.', 'success');
+  } catch (e) {
+    console.error(e);
+    toast('Gagal menghapus. Cek koneksi internet!', 'danger');
+  }
+}
